@@ -1,0 +1,15 @@
+[package]
+name = "rutsubo-daemon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Daemon de Rutsubo: API REST (C-1), WebSocket de eventos (C-3), agent loop y adapter LLM (C-4)"
+
+[dependencies]
+rutsubo-core = { path = "../core" }
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+ulid.workspace = true
+thiserror.workspace = true

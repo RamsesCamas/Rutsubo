@@ -1,0 +1,19 @@
+[package]
+name = "rutsubo-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Contrato único del protocolo Rutsubo: sobre C-3, eventos, comandos, rutas y diffs"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+ulid.workspace = true
+thiserror.workspace = true
+ts-rs.workspace = true
+similar = "2"
+
+[dev-dependencies]
+tempfile = "3"
