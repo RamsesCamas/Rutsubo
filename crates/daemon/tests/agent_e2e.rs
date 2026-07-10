@@ -128,9 +128,16 @@ async fn turno_completo_con_aprobacion_de_write_file() {
     .await;
     assert_eq!(status, StatusCode::ACCEPTED);
 
-    // El loop corre: deltas → read_file → write_file ⇒ approval_request.
-    let events =
-        wait_for_events(&router, &token, &sid, |ev| has_kind(ev, "approval_request")).await;
+    // El loop corre: deltas → read_file → write_file ⇒ approval_request y,
+    // justo después, session_state(waiting_approval) — esperamos la
+    // transición (transaccional con su evento) para evitar la carrera.
+    let events = wait_for_events(&router, &token, &sid, |ev| {
+        has_kind(ev, "approval_request")
+            && ev
+                .iter()
+                .any(|e| e["type"] == "session_state" && e["payload"]["state"] == "waiting_approval")
+    })
+    .await;
     assert!(has_kind(&events, "message_delta"));
     assert!(has_kind(&events, "tool_call_requested"));
     let first_tool = events
