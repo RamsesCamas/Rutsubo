@@ -19,7 +19,7 @@ tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "set-header", "trace"] }
-sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate", "macros", "chrono"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate", "macros", "chrono", "postgres"] }
 async-trait = "0.1"
 futures = "0.3"
 grep-searcher = "0.1"

@@ -11,7 +11,8 @@ use rutsubo_core::api::ModelConfig;
 use rutsubo_core::envelope::Envelope;
 use rutsubo_core::events::{Event, SessionState};
 use rutsubo_core::ids::SessionId;
-use sqlx::SqlitePool;
+use sqlx::postgres::PgPoolOptions;
+use sqlx::{PgPool, SqlitePool};
 use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::{RwLock, broadcast};
@@ -22,6 +23,7 @@ pub struct AppState {
     pub cfg: DaemonConfig,
     pub pool: SqlitePool,
     pub token: String,
+    pub remote_auth: Option<PgPool>,
     /// Bus de eventos vivo: todo evento persistido se difunde aquí (WS local
     /// en Fase D; el relay de C-2 se colgaría del mismo bus en fase futura).
     pub bus: broadcast::Sender<Envelope<Event>>,
@@ -46,6 +48,16 @@ impl AppState {
     /// adapter LLM.
     pub async fn bootstrap(cfg: DaemonConfig) -> Result<App, Box<dyn std::error::Error>> {
         let pool = store::open(&cfg.data_dir).await?;
+        let remote_auth = if cfg.auth_mode == crate::config::AuthMode::Remote {
+            let pool = PgPoolOptions::new()
+                .max_connections(8)
+                .connect(cfg.database_url.as_deref().expect("validated config"))
+                .await?;
+            crate::auth::migrate_remote_auth(&pool).await?;
+            Some(pool)
+        } else {
+            None
+        };
         let token = crate::auth::load_or_create_token(&cfg.data_dir)?;
         let model_config = match store::config::load_model(&pool).await? {
             Some(cfg) => cfg,
@@ -96,6 +108,7 @@ impl AppState {
             cfg,
             pool,
             token,
+            remote_auth,
             bus,
             model_config,
             gate: crate::gate::Gate::default(),

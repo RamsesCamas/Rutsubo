@@ -32,6 +32,8 @@ pub struct DaemonConfig {
     pub proxy_secret: Option<String>,
     /// Correos permitidos para el acceso remoto inicial.
     pub allowed_emails: Vec<String>,
+    /// PostgreSQL administrado para identidad/sesiones del modo remoto.
+    pub database_url: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -44,6 +46,8 @@ pub enum ConfigError {
     NoDataDir,
     #[error("RUTSUBO_PROXY_SECRET es obligatorio en modo remote")]
     MissingProxySecret,
+    #[error("DATABASE_URL es obligatorio en modo remote")]
+    MissingDatabaseUrl,
 }
 
 impl DaemonConfig {
@@ -90,6 +94,10 @@ impl DaemonConfig {
         if auth_mode == AuthMode::Remote && proxy_secret.is_none() {
             return Err(ConfigError::MissingProxySecret);
         }
+        let database_url = std::env::var("DATABASE_URL").ok().filter(|v| !v.is_empty());
+        if auth_mode == AuthMode::Remote && database_url.is_none() {
+            return Err(ConfigError::MissingDatabaseUrl);
+        }
         let allowed_emails = std::env::var("RUTSUBO_ALLOWED_EMAILS")
             .unwrap_or_default()
             .split(',')
@@ -106,6 +114,7 @@ impl DaemonConfig {
             auth_mode,
             proxy_secret,
             allowed_emails,
+            database_url,
         })
     }
 }

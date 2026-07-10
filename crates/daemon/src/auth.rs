@@ -14,6 +14,7 @@ use axum::response::Response;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use rand::RngCore;
+use sqlx::PgPool;
 use std::io;
 use std::path::Path;
 use subtle::ConstantTimeEq;
@@ -89,11 +90,15 @@ pub async fn require_bearer(
                 .iter()
                 .any(|allowed| allowed == &email.to_ascii_lowercase())
         });
-        return if proxy_ok && allowed {
-            Ok(next.run(req).await)
-        } else {
-            Err(ApiError::unauthorized())
-        };
+        if !(proxy_ok && allowed) {
+            return Err(ApiError::unauthorized());
+        }
+        if let (Some(pool), Some(email)) = (&app.remote_auth, user) {
+            upsert_remote_user(pool, &email.to_ascii_lowercase())
+                .await
+                .map_err(ApiError::internal)?;
+        }
+        return Ok(next.run(req).await);
     }
     let presented = req
         .headers()
@@ -104,6 +109,19 @@ pub async fn require_bearer(
         Some(t) if token_matches(&app.token, t) => Ok(next.run(req).await),
         _ => Err(ApiError::unauthorized()),
     }
+}
+
+pub async fn migrate_remote_auth(pool: &PgPool) -> Result<(), sqlx::Error> {
+    sqlx::query("CREATE TABLE IF NOT EXISTS users (id BIGSERIAL PRIMARY KEY, email TEXT UNIQUE NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), last_login_at TIMESTAMPTZ NOT NULL DEFAULT now())").execute(pool).await?;
+    sqlx::query("CREATE TABLE IF NOT EXISTS auth_sessions (id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES users(id), secret_hash TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL, revoked_at TIMESTAMPTZ)").execute(pool).await?;
+    sqlx::query("CREATE TABLE IF NOT EXISTS auth_tickets (id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES users(id), purpose TEXT NOT NULL, secret_hash TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL, consumed_at TIMESTAMPTZ)").execute(pool).await?;
+    Ok(())
+}
+
+async fn upsert_remote_user(pool: &PgPool, email: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("INSERT INTO users (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET last_login_at = now()")
+        .bind(email).execute(pool).await?;
+    Ok(())
 }
 
 #[cfg(test)]

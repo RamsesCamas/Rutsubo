@@ -29,6 +29,7 @@ async fn spawn_server() -> (App, SocketAddr, tempfile::TempDir) {
         auth_mode: rutsubo_daemon::config::AuthMode::Local,
         proxy_secret: None,
         allowed_emails: vec![],
+        database_url: None,
     };
     let app = AppState::bootstrap(cfg).await.unwrap();
     let router = rutsubo_daemon::api::router(app.clone());
