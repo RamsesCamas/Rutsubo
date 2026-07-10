@@ -278,3 +278,93 @@ async fn quinientos_eventos_sin_huecos() {
         "seq sin huecos (DoD)"
     );
 }
+
+#[tokio::test]
+async fn ticket_permite_conectar_y_es_de_un_solo_uso() {
+    let (app, addr, _dir) = spawn_server().await;
+    let ws = tempfile::tempdir().unwrap();
+    let sid = create_session(&app, ws.path()).await; // seq 1
+
+    // Emitir ticket vía REST (misma auth que el resto del contrato).
+    let client = reqwest_lite(addr, &app.token, "POST", "/v1/ws/ticket").await;
+    assert_eq!(client.0, 200, "cuerpo: {}", client.1);
+    let body: Value = serde_json::from_str(&client.1).unwrap();
+    let ticket = body["ticket"].as_str().unwrap().to_owned();
+    assert_eq!(body["expires_in_s"], 60);
+
+    // Handshake con ?ticket= (sin token) y flujo normal.
+    let (mut socket, _) =
+        tokio_tungstenite::connect_async(format!("ws://{addr}/v1/ws?ticket={ticket}"))
+            .await
+            .expect("handshake con ticket");
+    subscribe(&mut socket, sid, 0).await;
+    let event = recv_event(&mut socket).await;
+    assert_eq!(event["seq"], 1);
+    drop(socket);
+
+    // El mismo ticket no puede reutilizarse.
+    let err = tokio_tungstenite::connect_async(format!("ws://{addr}/v1/ws?ticket={ticket}"))
+        .await
+        .expect_err("el ticket es de un solo uso");
+    match err {
+        tokio_tungstenite::tungstenite::Error::Http(response) => {
+            assert_eq!(response.status(), 401);
+        }
+        other => panic!("error inesperado: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn ticket_expirado_rechazado() {
+    let (app, addr, _dir) = spawn_server().await;
+    let (ticket, _) = app.tickets.issue_with_ttl(std::time::Duration::ZERO);
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    let err = tokio_tungstenite::connect_async(format!("ws://{addr}/v1/ws?ticket={ticket}"))
+        .await
+        .expect_err("ticket caducado");
+    match err {
+        tokio_tungstenite::tungstenite::Error::Http(response) => {
+            assert_eq!(response.status(), 401);
+        }
+        other => panic!("error inesperado: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn emitir_ticket_exige_auth() {
+    let (_app, addr, _dir) = spawn_server().await;
+    let (status, body) = reqwest_lite(addr, "token-malo", "POST", "/v1/ws/ticket").await;
+    assert_eq!(status, 401, "cuerpo: {body}");
+}
+
+/// Mini cliente HTTP sobre TCP (evita añadir reqwest como dependencia).
+async fn reqwest_lite(addr: SocketAddr, token: &str, method: &str, path: &str) -> (u16, String) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let request = format!(
+        "{method} {path} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer {token}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+    );
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let mut raw = Vec::new();
+    stream.read_to_end(&mut raw).await.unwrap();
+    let text = String::from_utf8_lossy(&raw);
+    let status: u16 = text
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|code| code.parse().ok())
+        .unwrap_or(0);
+    let body = text
+        .split("\r\n\r\n")
+        .nth(1)
+        .unwrap_or_default()
+        .trim()
+        .to_owned();
+    // Cuerpos chunked: extrae la línea JSON.
+    let body = body
+        .lines()
+        .find(|line| line.starts_with('{'))
+        .unwrap_or(&body)
+        .to_owned();
+    (status, body)
+}

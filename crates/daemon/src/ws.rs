@@ -40,6 +40,36 @@ const LOCAL_WS_RESOLVER: &str = "local:ws";
 #[derive(Deserialize)]
 pub struct WsQuery {
     token: Option<String>,
+    ticket: Option<String>,
+}
+
+/// POST /v1/ws/ticket — emite un ticket efímero de un solo uso para el
+/// handshake del WS. Pasa por el middleware de auth normal: en modo remoto
+/// solo llega vía BFF (proxy + allowlist); en local exige el Bearer del token.
+pub async fn issue_ticket(
+    State(app): State<App>,
+) -> axum::Json<rutsubo_core::api::WsTicketResponse> {
+    let (ticket, expires_in_s) = app.tickets.issue();
+    axum::Json(rutsubo_core::api::WsTicketResponse {
+        ticket,
+        expires_in_s,
+    })
+}
+
+/// Decisión de autorización del handshake (pura, testeable):
+/// - Remote: SOLO ticket (el token local jamás cruza el BFF) y, si hay
+///   `spa_origin` configurado, el Origin del navegador debe coincidir.
+/// - Local: token del daemon o ticket, sin exigencia de Origin.
+fn ws_authorized(
+    mode: crate::config::AuthMode,
+    ticket_ok: bool,
+    token_ok: bool,
+    origin_ok: bool,
+) -> bool {
+    match mode {
+        crate::config::AuthMode::Remote => ticket_ok && origin_ok,
+        crate::config::AuthMode::Local => token_ok || ticket_ok,
+    }
 }
 
 pub async fn ws_handler(
@@ -53,11 +83,24 @@ pub async fn ws_handler(
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .map(str::to_owned);
-    let presented = bearer.or(query.token);
-    let authorized = presented
+    let token_ok = bearer
+        .or(query.token)
         .map(|t| crate::auth::token_matches(&app.token, &t))
         .unwrap_or(false);
-    if !authorized {
+    // Consumir el ticket solo si viene: un solo uso incluso en intentos mixtos.
+    let ticket_ok = query
+        .ticket
+        .as_deref()
+        .is_some_and(|t| app.tickets.consume(t));
+    // Defensa extra en remoto: el handshake debe venir de la SPA publicada.
+    let origin_ok = match app.cfg.spa_origin.as_deref() {
+        Some(expected) => headers
+            .get(axum::http::header::ORIGIN)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|origin| origin == expected),
+        None => true,
+    };
+    if !ws_authorized(app.cfg.auth_mode, ticket_ok, token_ok, origin_ok) {
         return ApiError::unauthorized().into_response();
     }
     upgrade.on_upgrade(move |socket| connection(app, socket))
@@ -249,4 +292,29 @@ async fn handle_command(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ws_authorized;
+    use crate::config::AuthMode;
+
+    #[test]
+    fn remoto_exige_ticket_y_origin() {
+        // El token local jamás autoriza en remoto (no cruza el BFF).
+        assert!(!ws_authorized(AuthMode::Remote, false, true, true));
+        assert!(ws_authorized(AuthMode::Remote, true, false, true));
+        // Con spa_origin configurado, un Origin ajeno se rechaza aun con ticket.
+        assert!(!ws_authorized(AuthMode::Remote, true, false, false));
+        assert!(!ws_authorized(AuthMode::Remote, false, false, true));
+    }
+
+    #[test]
+    fn local_acepta_token_o_ticket() {
+        assert!(ws_authorized(AuthMode::Local, false, true, true));
+        assert!(ws_authorized(AuthMode::Local, true, false, true));
+        // En local el Origin no aplica (spa_origin es para el modo remoto).
+        assert!(ws_authorized(AuthMode::Local, true, false, false));
+        assert!(!ws_authorized(AuthMode::Local, false, false, true));
+    }
 }

@@ -14,5 +14,6 @@ pub mod gate;
 pub mod llm;
 pub mod state;
 pub mod store;
+pub mod tickets;
 pub mod tools;
 pub mod ws;

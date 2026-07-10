@@ -363,3 +363,16 @@ pub struct AuditPage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<String>,
 }
+
+// ---- Ticket temporal para el WebSocket remoto (POST /v1/ws/ticket) ----
+
+/// El navegador no puede mandar `Authorization` en el handshake WS y el proxy
+/// BFF (serverless) no reenvía WebSockets: el cliente remoto pide un ticket
+/// efímero por REST (autenticado vía BFF) y abre el WS directo al daemon con
+/// `?ticket=`. Un solo uso, caduca en `expires_in_s` segundos.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct WsTicketResponse {
+    pub ticket: String,
+    pub expires_in_s: u32,
+}

@@ -39,6 +39,8 @@ pub struct AppState {
     /// Registro de las 5 herramientas (RF-12).
     pub tools: Arc<ToolRegistry>,
     pub transcriber: Arc<dyn crate::asr::Transcriber>,
+    /// Tickets efímeros de un solo uso para el handshake del WS remoto.
+    pub tickets: crate::tickets::TicketStore,
     /// Sesiones con turno agéntico en curso (RF-16: suspensión por sesión).
     pub running: std::sync::Mutex<HashSet<SessionId>>,
 }
@@ -115,6 +117,7 @@ impl AppState {
             llm,
             tools,
             transcriber,
+            tickets: crate::tickets::TicketStore::default(),
             running: std::sync::Mutex::new(HashSet::new()),
         }))
     }

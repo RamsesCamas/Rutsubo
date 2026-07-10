@@ -35,6 +35,7 @@ pub fn router(app: App) -> Router {
             get(config::get_model).put(config::put_model),
         )
         .route("/v1/audit", get(audit::query))
+        .route("/v1/ws/ticket", post(crate::ws::issue_ticket))
         .route("/v1/asr/transcribe", post(asr::transcribe))
         .route_layer(middleware::from_fn_with_state(
             app.clone(),
