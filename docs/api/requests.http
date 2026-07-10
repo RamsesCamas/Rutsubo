@@ -136,6 +136,12 @@ Content-Type: audio/webm
 < ./sample.webm
 --RutsuboBoundary--
 
+### 14 · POST /v1/ws/ticket — ticket efímero (60 s, un solo uso) para el
+#      handshake del WS cuando no se puede mandar Authorization (navegador
+#      remoto). Conectar luego con ws(s)://…/v1/ws?ticket=<ticket>
+POST {{base}}/v1/ws/ticket
+Authorization: Bearer {{token}}
+
 # WebSocket (Fase D, contrato C-3): no es HTTP plano, se prueba con wscat:
 #   npx wscat -c "ws://127.0.0.1:7431/v1/ws?token=$(cat ~/.local/share/rutsubo/token)"
 #   > {"v":1,"type":"subscribe_session","payload":{"session_id":"…","after_seq":0},"session_id":"…","ts":"2026-07-09T18:00:00Z"}

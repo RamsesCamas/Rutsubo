@@ -59,3 +59,15 @@ colgará en la fase siguiente.
    `reason: missing_api_key`; no se expone, registra ni persiste la clave.
    ASR recibe únicamente audio multipart en memoria (máximo 25 MB) y audita
    sólo duración y tamaño.
+10. **Modo remoto (BFF + tickets WS).** Interinato antes del relay C-2: la
+   SPA en Vercel autentica con Google detrás de un BFF (cookie HttpOnly) que
+   proxya REST hacia Railway con secreto interno + `x-rutsubo-user`
+   (allowlist). Como el BFF serverless no proxya WebSockets y el navegador no
+   puede mandar `Authorization` en el upgrade, `POST /v1/ws/ticket` (ruta
+   protegida) emite un ticket de un solo uso (60 s, en memoria: instancia
+   única; `auth_tickets` de Postgres queda para multi-instancia) y el
+   navegador abre el `wss://` directo al daemon con `?ticket=` — con
+   verificación de `Origin` contra `RUTSUBO_SPA_ORIGIN`. En modo remoto el
+   token local jamás autoriza el WS. Pendiente de la fase siguiente: migrar
+   sesiones/eventos del agente de SQLite a Postgres (en Railway el SQLite es
+   efímero entre deploys).
