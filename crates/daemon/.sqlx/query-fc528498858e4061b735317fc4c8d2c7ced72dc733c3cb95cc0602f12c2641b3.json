@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO rules (id, workspace_path, tool, pattern, created_at) VALUES (?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "fc528498858e4061b735317fc4c8d2c7ced72dc733c3cb95cc0602f12c2641b3"
+}

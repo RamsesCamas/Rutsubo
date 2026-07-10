@@ -14,6 +14,15 @@ bindings:
     cargo test -p rutsubo-core export_bindings
     git diff --exit-code -- crates/core/bindings
 
+# Regenera la caché offline de sqlx (tras cambiar consultas o migraciones).
+# Requiere sqlx-cli 0.8: cargo install sqlx-cli --version "^0.8" \
+#   --no-default-features --features rustls,sqlite
+prepare:
+    cd crates/daemon && \
+      DATABASE_URL="sqlite://$PWD/crates/daemon/.sqlx-dev.db" sqlx database create && \
+      DATABASE_URL="sqlite://$PWD/crates/daemon/.sqlx-dev.db" sqlx migrate run && \
+      DATABASE_URL="sqlite://$PWD/crates/daemon/.sqlx-dev.db" cargo sqlx prepare
+
 # Formato y lints
 lint:
     cargo fmt --all --check

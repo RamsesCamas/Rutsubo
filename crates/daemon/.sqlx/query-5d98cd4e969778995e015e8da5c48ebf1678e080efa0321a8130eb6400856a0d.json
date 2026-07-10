@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE sessions SET last_seq = last_seq + 1 WHERE id = ? RETURNING last_seq as \"last_seq!: i64\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "last_seq!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5d98cd4e969778995e015e8da5c48ebf1678e080efa0321a8130eb6400856a0d"
+}

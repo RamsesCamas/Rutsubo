@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id as \"id!: String\", workspace_path as \"workspace_path!: String\",\n                  tool as \"tool!: String\", pattern as \"pattern!: String\",\n                  created_at as \"created_at!: String\"\n           FROM rules ORDER BY id ASC",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "workspace_path!: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "tool!: String",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "pattern!: String",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: String",
+        "ordinal": 4,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "775e71c7c365b309484ecbc59a2ee6437a42d48844cae43c922e9daa37908307"
+}

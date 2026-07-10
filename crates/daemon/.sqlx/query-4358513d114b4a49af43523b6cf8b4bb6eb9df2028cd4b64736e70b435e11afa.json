@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE approvals SET decision = ?, resolved_by = ?, resolved_at = ?\n         WHERE id = ? AND decision IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "4358513d114b4a49af43523b6cf8b4bb6eb9df2028cd4b64736e70b435e11afa"
+}

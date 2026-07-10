@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id as \"id!: String\" FROM messages WHERE session_id = ? AND client_msg_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "81589b8729cba085fb0eaedf28f1026a670c57f2b845b867332a85dacf33e4b4"
+}

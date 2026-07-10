@@ -7,6 +7,7 @@
 //! aquí con `ts-rs` (`just bindings`); los esquemas JSON de los documentos de
 //! diseño son proyección legible de estos tipos.
 
+pub mod api;
 pub mod commands;
 pub mod diff;
 pub mod envelope;

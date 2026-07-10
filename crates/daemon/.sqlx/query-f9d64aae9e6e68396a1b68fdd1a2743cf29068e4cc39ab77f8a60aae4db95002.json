@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT payload as \"payload!: String\" FROM events\n           WHERE session_id = ? AND seq > ?\n           ORDER BY seq ASC LIMIT ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "payload!: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f9d64aae9e6e68396a1b68fdd1a2743cf29068e4cc39ab77f8a60aae4db95002"
+}

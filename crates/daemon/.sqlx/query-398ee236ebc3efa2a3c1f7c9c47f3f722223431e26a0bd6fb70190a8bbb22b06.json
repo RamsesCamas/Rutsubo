@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO sessions (id, workspace_path, title, state, created_at, last_seq)\n         VALUES (?, ?, ?, 'idle', ?, 0)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "398ee236ebc3efa2a3c1f7c9c47f3f722223431e26a0bd6fb70190a8bbb22b06"
+}

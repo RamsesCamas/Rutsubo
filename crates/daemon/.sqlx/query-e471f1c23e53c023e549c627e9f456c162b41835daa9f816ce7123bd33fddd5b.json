@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT role as \"role!: String\", content as \"content!: String\"\n           FROM messages WHERE session_id = ? ORDER BY id ASC",
+  "describe": {
+    "columns": [
+      {
+        "name": "role!: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "content!: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "e471f1c23e53c023e549c627e9f456c162b41835daa9f816ce7123bd33fddd5b"
+}
