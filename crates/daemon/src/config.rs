@@ -35,7 +35,11 @@ pub enum ConfigError {
 impl DaemonConfig {
     pub fn from_env() -> Result<Self, ConfigError> {
         let _ = dotenvy::dotenv();
-        let bind_raw = std::env::var("RUTSUBO_BIND").unwrap_or_else(|_| DEFAULT_BIND.into());
+        let bind_raw = std::env::var("RUTSUBO_BIND").unwrap_or_else(|_| {
+            std::env::var("PORT")
+                .map(|port| format!("0.0.0.0:{port}"))
+                .unwrap_or_else(|_| DEFAULT_BIND.into())
+        });
         let bind: SocketAddr = bind_raw
             .parse()
             .map_err(|_| ConfigError::InvalidBind(bind_raw.clone()))?;
