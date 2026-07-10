@@ -29,4 +29,7 @@ lint:
     cargo clippy --workspace --all-targets -- -D warnings
 
 # Gate local equivalente a CI
-ci: lint test bindings
+check-secrets:
+    ! git log -p --all | rg -q 'gsk_'
+
+ci: lint test bindings check-secrets

@@ -2,6 +2,7 @@
 
 use crate::config::DaemonConfig;
 use crate::llm::fallback::FallbackAdapter;
+use crate::llm::groq::GroqProvider;
 use crate::llm::mock::MockProvider;
 use crate::store;
 use crate::store::events::AppendError;
@@ -35,6 +36,7 @@ pub struct AppState {
     pub llm: Arc<FallbackAdapter>,
     /// Registro de las 5 herramientas (RF-12).
     pub tools: Arc<ToolRegistry>,
+    pub transcriber: Arc<dyn crate::asr::Transcriber>,
     /// Sesiones con turno agéntico en curso (RF-16: suspensión por sesión).
     pub running: std::sync::Mutex<HashSet<SessionId>>,
 }
@@ -53,14 +55,26 @@ impl AppState {
                 def
             }
         };
-        let primary = Arc::new(MockProvider::new(format!(
-            "local:mock:{}",
-            model_config.local.model
-        )));
-        let secondary = Arc::new(MockProvider::new(format!(
-            "external:mock:{}",
-            model_config.external.model
-        )));
+        let primary: Arc<dyn crate::llm::LlmProvider> = match &cfg.groq_api_key {
+            Some(key) => Arc::new(GroqProvider::new(
+                model_config.primary.model.clone(),
+                key.clone(),
+            )),
+            None => Arc::new(MockProvider::new(format!(
+                "groq:missing:{}",
+                model_config.primary.model
+            ))),
+        };
+        let secondary: Arc<dyn crate::llm::LlmProvider> = match &cfg.groq_api_key {
+            Some(key) => Arc::new(GroqProvider::new(
+                model_config.fallback.model.clone(),
+                key.clone(),
+            )),
+            None => Arc::new(MockProvider::new(format!(
+                "groq:missing:{}",
+                model_config.fallback.model
+            ))),
+        };
         let model_config = Arc::new(RwLock::new(model_config));
         let llm = Arc::new(FallbackAdapter::new(
             primary,
@@ -68,6 +82,10 @@ impl AppState {
             model_config.clone(),
         ));
 
+        let transcriber: Arc<dyn crate::asr::Transcriber> = match &cfg.groq_api_key {
+            Some(key) => Arc::new(crate::asr::GroqTranscriber::new(key.clone())),
+            None => Arc::new(crate::asr::MockTranscriber),
+        };
         let (bus, _) = broadcast::channel(1024);
         Ok(Arc::new(Self {
             cfg,
@@ -78,6 +96,7 @@ impl AppState {
             gate: crate::gate::Gate::default(),
             llm,
             tools: Arc::new(ToolRegistry::standard()),
+            transcriber,
             running: std::sync::Mutex::new(HashSet::new()),
         }))
     }

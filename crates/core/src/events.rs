@@ -57,6 +57,7 @@ pub struct Usage {
 #[ts(export)]
 pub enum FallbackTrigger {
     Oom,
+    RateLimited,
     TtftExceeded,
     Failures,
     Manual,

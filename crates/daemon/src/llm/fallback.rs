@@ -20,7 +20,7 @@
 use super::{GenerationRequest, GenerationStream, LlmProvider, ProviderError, StreamItem};
 use async_trait::async_trait;
 use futures::{Stream, StreamExt};
-use rutsubo_core::api::{ModelConfig, ModelPolicy, ProviderHealth, ProviderStatus};
+use rutsubo_core::api::{ModelConfig, ProviderHealth, ProviderStatus};
 use rutsubo_core::events::FallbackTrigger;
 use rutsubo_core::ids::ProviderId;
 use std::pin::Pin;
@@ -64,6 +64,7 @@ struct BreakerState {
     current: ProviderId,
     /// Última vez que se sondeó la salud del primario con el breaker abierto.
     last_health_probe: Option<Instant>,
+    rate_limited_until: Option<Instant>,
 }
 
 pub struct FallbackAdapter {
@@ -98,6 +99,7 @@ impl FallbackAdapter {
                 force_secondary_next: false,
                 current,
                 last_health_probe: None,
+                rate_limited_until: None,
             })),
         }
     }
@@ -113,60 +115,64 @@ impl FallbackAdapter {
         ProviderStatus {
             id: current.0,
             health,
+            reason: None,
         }
     }
 
     /// Decide la ruta de esta llamada según política y breaker.
-    async fn route(&self, policy: ModelPolicy) -> Route {
-        match policy {
-            ModelPolicy::ExternalOnly => Route::Secondary(FallbackTrigger::Manual),
-            // Regla 3: en local_only los disparadores se vuelven error
-            // visible; jamás se enruta al secundario.
-            ModelPolicy::LocalOnly => Route::Primary,
-            ModelPolicy::LocalFirst => {
-                let (breaker_open, needs_probe, forced) = {
-                    let mut st = self.state.lock().expect("state");
-                    let forced = std::mem::take(&mut st.force_secondary_next);
-                    let now = Instant::now();
-                    match st.open_until {
-                        Some(until) if now < until => {
-                            let needs_probe = st
-                                .last_health_probe
-                                .is_none_or(|t| now - t >= HEALTH_PROBE_INTERVAL);
-                            if needs_probe {
-                                st.last_health_probe = Some(now);
-                            }
-                            (true, needs_probe, forced)
+    async fn route(&self) -> Route {
+        if self
+            .state
+            .lock()
+            .expect("state")
+            .rate_limited_until
+            .is_some_and(|until| Instant::now() < until)
+        {
+            return Route::Secondary(FallbackTrigger::RateLimited);
+        }
+        {
+            let (breaker_open, needs_probe, forced) = {
+                let mut st = self.state.lock().expect("state");
+                let forced = std::mem::take(&mut st.force_secondary_next);
+                let now = Instant::now();
+                match st.open_until {
+                    Some(until) if now < until => {
+                        let needs_probe = st
+                            .last_health_probe
+                            .is_none_or(|t| now - t >= HEALTH_PROBE_INTERVAL);
+                        if needs_probe {
+                            st.last_health_probe = Some(now);
                         }
-                        Some(_) => (true, true, forced), // cooldown vencido: sondear ya
-                        None => (false, false, forced),
+                        (true, needs_probe, forced)
                     }
-                };
-
-                if forced {
-                    return Route::Secondary(FallbackTrigger::Failures);
+                    Some(_) => (true, true, forced), // cooldown vencido: sondear ya
+                    None => (false, false, forced),
                 }
-                if !breaker_open {
+            };
+
+            if forced {
+                return Route::Secondary(FallbackTrigger::Failures);
+            }
+            if !breaker_open {
+                return Route::Primary;
+            }
+            // Breaker abierto: sondeo de recuperación.
+            if needs_probe {
+                let cooldown_elapsed = {
+                    let st = self.state.lock().expect("state");
+                    st.open_until.map(|u| Instant::now() >= u).unwrap_or(true)
+                };
+                if cooldown_elapsed && self.primary.health().await == ProviderHealth::Ready {
+                    // Recuperación: cierra el breaker; esta llamada vuelve
+                    // al primario (C-4 tabla 6).
+                    let mut st = self.state.lock().expect("state");
+                    st.open_until = None;
+                    st.consecutive_failures = 0;
+                    st.last_health_probe = None;
                     return Route::Primary;
                 }
-                // Breaker abierto: sondeo de recuperación.
-                if needs_probe {
-                    let cooldown_elapsed = {
-                        let st = self.state.lock().expect("state");
-                        st.open_until.map(|u| Instant::now() >= u).unwrap_or(true)
-                    };
-                    if cooldown_elapsed && self.primary.health().await == ProviderHealth::Ready {
-                        // Recuperación: cierra el breaker; esta llamada vuelve
-                        // al primario (C-4 tabla 6).
-                        let mut st = self.state.lock().expect("state");
-                        st.open_until = None;
-                        st.consecutive_failures = 0;
-                        st.last_health_probe = None;
-                        return Route::Primary;
-                    }
-                }
-                Route::Secondary(FallbackTrigger::Failures)
             }
+            Route::Secondary(FallbackTrigger::Failures)
         }
     }
 
@@ -240,11 +246,11 @@ impl FallbackAdapter {
         req: GenerationRequest,
     ) -> Result<GenerationOutcome, ProviderError> {
         let cfg = self.config.read().await.clone();
-        let ttft = cfg.fallback.ttft_threshold_ms;
-        let window = cfg.fallback.failure_window;
-        let cooldown = cfg.fallback.cooldown_s;
+        let ttft = cfg.thresholds.ttft_threshold_ms;
+        let window = cfg.thresholds.failure_window;
+        let cooldown = cfg.thresholds.cooldown_s;
 
-        let (provider, trigger) = match self.route(cfg.policy).await {
+        let (provider, trigger) = match self.route().await {
             Route::Primary => (self.primary.clone(), None),
             Route::Secondary(t) => (self.secondary.clone(), Some(t)),
         };
@@ -273,6 +279,11 @@ impl FallbackAdapter {
                         self.open_breaker(cooldown);
                         Some(FallbackTrigger::Oom)
                     }
+                    ProviderError::RateLimited { retry_after_s } => {
+                        self.state.lock().expect("state").rate_limited_until =
+                            Some(Instant::now() + Duration::from_secs(*retry_after_s));
+                        Some(FallbackTrigger::RateLimited)
+                    }
                     // TTFT: cancela primario, reintenta en secundario
                     // (sin abrir el breaker: tabla 6).
                     ProviderError::Timeout { .. } => Some(FallbackTrigger::TtftExceeded),
@@ -285,8 +296,6 @@ impl FallbackAdapter {
                 };
 
                 match fallback_trigger {
-                    // local_only: el disparador se vuelve error visible (regla 3).
-                    Some(_) if cfg.policy == ModelPolicy::LocalOnly => Err(err),
                     Some(trigger) => {
                         let stream = self.attempt(&self.secondary, &req, ttft).await?;
                         let id = self.secondary.id();
@@ -352,6 +361,7 @@ impl Stream for WatchedStream {
                     }
                 }
                 ProviderError::Cancelled => {} // regla 4: cancelar no es fallar
+                ProviderError::RateLimited { .. } => {}
             }
         }
         polled

@@ -3,4 +3,4 @@
 /**
  * Catálogo cerrado de códigos de error de C-1.
  */
-export type ErrorCode = "unauthorized" | "not_found" | "validation_failed" | "conflict" | "session_busy" | "internal";
+export type ErrorCode = "unauthorized" | "not_found" | "validation_failed" | "conflict" | "session_busy" | "asr_failed" | "internal";

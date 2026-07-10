@@ -3,4 +3,4 @@
 /**
  * Disparador de un cambio de proveedor (C-3 `model_provider_changed`, C-4 tabla 6).
  */
-export type FallbackTrigger = "oom" | "ttft_exceeded" | "failures" | "manual";
+export type FallbackTrigger = "oom" | "rate_limited" | "ttft_exceeded" | "failures" | "manual";

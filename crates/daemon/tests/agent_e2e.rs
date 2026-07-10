@@ -21,7 +21,7 @@ async fn test_app() -> (App, Router, tempfile::TempDir) {
         bind: "127.0.0.1:0".parse().unwrap(),
         max_iterations: 20,
         spa_origin: None,
-        external_api_key: None,
+        groq_api_key: None,
     };
     let app = AppState::bootstrap(cfg).await.unwrap();
     let router = api::router(app.clone());
@@ -240,7 +240,7 @@ async fn turno_completo_con_aprobacion_de_write_file() {
             call["detail"]["provider_id"]
                 .as_str()
                 .unwrap()
-                .starts_with("local:mock:")
+                .starts_with("groq:missing:")
         );
     }
 

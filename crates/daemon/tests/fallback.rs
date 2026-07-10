@@ -2,7 +2,7 @@
 //! usando FailingMock (falla bajo demanda) y el reloj pausado de tokio.
 
 use futures::StreamExt;
-use rutsubo_core::api::{FallbackConfig, ModelConfig, ModelPolicy, ProviderHealth};
+use rutsubo_core::api::{ModelConfig, ProviderHealth, Thresholds};
 use rutsubo_core::events::FallbackTrigger;
 use rutsubo_daemon::llm::fallback::FallbackAdapter;
 use rutsubo_daemon::llm::mock::{FailMode, FailingMock, MockProvider};
@@ -11,10 +11,9 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
-fn config(policy: ModelPolicy, window: u32, cooldown_s: u32) -> Arc<RwLock<ModelConfig>> {
+fn config(window: u32, cooldown_s: u32) -> Arc<RwLock<ModelConfig>> {
     let cfg = ModelConfig {
-        policy,
-        fallback: FallbackConfig {
+        thresholds: Thresholds {
             ttft_threshold_ms: 5000,
             failure_window: window,
             cooldown_s,
@@ -48,11 +47,7 @@ async fn drain(
 async fn oom_hace_fallback_inmediato_y_abre_el_breaker() {
     let primary = FailingMock::new("local:mock:p", FailMode::Oom);
     let secondary = FailingMock::new("external:mock:s", FailMode::Ok);
-    let adapter = FallbackAdapter::new(
-        primary.clone(),
-        secondary.clone(),
-        config(ModelPolicy::LocalFirst, 3, 60),
-    );
+    let adapter = FallbackAdapter::new(primary.clone(), secondary.clone(), config(3, 60));
 
     let outcome = adapter.generate_with_info(request()).await.unwrap();
     assert_eq!(outcome.provider_id.0, "external:mock:s");
@@ -78,11 +73,7 @@ async fn oom_hace_fallback_inmediato_y_abre_el_breaker() {
 async fn ttft_cancela_al_primario_y_reintenta_sin_abrir_breaker() {
     let primary = FailingMock::new("local:mock:p", FailMode::SlowFirstItem);
     let secondary = FailingMock::new("external:mock:s", FailMode::Ok);
-    let adapter = FallbackAdapter::new(
-        primary.clone(),
-        secondary.clone(),
-        config(ModelPolicy::LocalFirst, 3, 60),
-    );
+    let adapter = FallbackAdapter::new(primary.clone(), secondary.clone(), config(3, 60));
 
     let outcome = adapter.generate_with_info(request()).await.unwrap();
     assert_eq!(outcome.provider_id.0, "external:mock:s");
@@ -99,15 +90,35 @@ async fn ttft_cancela_al_primario_y_reintenta_sin_abrir_breaker() {
     assert_eq!(primary.calls.load(std::sync::atomic::Ordering::SeqCst), 2);
 }
 
+#[tokio::test(start_paused = true)]
+async fn rate_limited_va_al_fallback_y_no_abre_breaker() {
+    let primary = FailingMock::new("groq:p", FailMode::RateLimited);
+    let secondary = FailingMock::new("groq:s", FailMode::Ok);
+    let adapter = FallbackAdapter::new(primary.clone(), secondary.clone(), config(1, 60));
+
+    let outcome = adapter.generate_with_info(request()).await.unwrap();
+    assert_eq!(outcome.provider_id.0, "groq:s");
+    assert_eq!(
+        outcome.switch.unwrap().trigger,
+        FallbackTrigger::RateLimited
+    );
+
+    // Antes de Retry-After se salta el primario, sin abrir el breaker.
+    let _ = adapter.generate_with_info(request()).await.unwrap();
+    assert_eq!(primary.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+    tokio::time::advance(std::time::Duration::from_secs(31)).await;
+    primary.set_mode(FailMode::Ok);
+    let outcome = adapter.generate_with_info(request()).await.unwrap();
+    assert_eq!(outcome.provider_id.0, "groq:p");
+    assert_eq!(primary.calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
 #[tokio::test]
 async fn la_ventana_de_fallos_abre_el_breaker() {
     let primary = FailingMock::new("local:mock:p", FailMode::Transport);
     let secondary = FailingMock::new("external:mock:s", FailMode::Ok);
-    let adapter = FallbackAdapter::new(
-        primary.clone(),
-        secondary.clone(),
-        config(ModelPolicy::LocalFirst, 3, 60),
-    );
+    let adapter = FallbackAdapter::new(primary.clone(), secondary.clone(), config(3, 60));
 
     // Fallos 1 y 2: error visible (aún no se llena la ventana).
     for _ in 0..2 {
@@ -133,11 +144,7 @@ async fn la_ventana_de_fallos_abre_el_breaker() {
 async fn recuperacion_health_ready_tras_cooldown_cierra_el_breaker() {
     let primary = FailingMock::new("local:mock:p", FailMode::Oom);
     let secondary = FailingMock::new("external:mock:s", FailMode::Ok);
-    let adapter = FallbackAdapter::new(
-        primary.clone(),
-        secondary.clone(),
-        config(ModelPolicy::LocalFirst, 3, 60),
-    );
+    let adapter = FallbackAdapter::new(primary.clone(), secondary.clone(), config(3, 60));
 
     let _ = adapter.generate_with_info(request()).await.unwrap(); // abre breaker
     primary.set_mode(FailMode::Ok);
@@ -159,11 +166,7 @@ async fn recuperacion_health_ready_tras_cooldown_cierra_el_breaker() {
 async fn sin_health_ready_no_hay_recuperacion() {
     let primary = FailingMock::new("local:mock:p", FailMode::Oom);
     let secondary = FailingMock::new("external:mock:s", FailMode::Ok);
-    let adapter = FallbackAdapter::new(
-        primary.clone(),
-        secondary.clone(),
-        config(ModelPolicy::LocalFirst, 3, 60),
-    );
+    let adapter = FallbackAdapter::new(primary.clone(), secondary.clone(), config(3, 60));
 
     let _ = adapter.generate_with_info(request()).await.unwrap();
     primary.set_mode(FailMode::Ok);
@@ -182,11 +185,7 @@ async fn cancelled_jamas_alimenta_la_ventana() {
     // Ventana de 1: cualquier fallo contado abriría el breaker.
     let primary = Arc::new(MockProvider::new("local:mock:p"));
     let secondary = FailingMock::new("external:mock:s", FailMode::Ok);
-    let adapter = FallbackAdapter::new(
-        primary,
-        secondary.clone(),
-        config(ModelPolicy::LocalFirst, 1, 60),
-    );
+    let adapter = FallbackAdapter::new(primary, secondary.clone(), config(1, 60));
 
     let req = request();
     req.cancel.cancel();
@@ -203,11 +202,7 @@ async fn cancelled_jamas_alimenta_la_ventana() {
 async fn jamas_fallback_a_mitad_de_streaming() {
     let primary = FailingMock::new("local:mock:p", FailMode::FailMidStream);
     let secondary = FailingMock::new("external:mock:s", FailMode::Ok);
-    let adapter = FallbackAdapter::new(
-        primary.clone(),
-        secondary.clone(),
-        config(ModelPolicy::LocalFirst, 3, 60),
-    );
+    let adapter = FallbackAdapter::new(primary.clone(), secondary.clone(), config(3, 60));
 
     let outcome = adapter.generate_with_info(request()).await.unwrap();
     assert_eq!(outcome.provider_id.0, "local:mock:p");
@@ -229,39 +224,4 @@ async fn jamas_fallback_a_mitad_de_streaming() {
     assert_eq!(outcome.provider_id.0, "external:mock:s");
     assert_eq!(outcome.switch.unwrap().trigger, FallbackTrigger::Failures);
     assert_eq!(primary.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
-}
-
-#[tokio::test]
-async fn local_only_convierte_disparadores_en_error_visible() {
-    let primary = FailingMock::new("local:mock:p", FailMode::Oom);
-    let secondary = FailingMock::new("external:mock:s", FailMode::Ok);
-    let adapter = FallbackAdapter::new(
-        primary,
-        secondary.clone(),
-        config(ModelPolicy::LocalOnly, 3, 60),
-    );
-
-    let err = adapter.generate_with_info(request()).await.unwrap_err();
-    assert!(matches!(err, ProviderError::OutOfMemory));
-    assert_eq!(
-        secondary.calls.load(std::sync::atomic::Ordering::SeqCst),
-        0,
-        "la privacidad estricta domina sobre la continuidad (ADR-008)"
-    );
-}
-
-#[tokio::test]
-async fn external_only_enruta_al_secundario_como_manual() {
-    let primary = FailingMock::new("local:mock:p", FailMode::Ok);
-    let secondary = FailingMock::new("external:mock:s", FailMode::Ok);
-    let adapter = FallbackAdapter::new(
-        primary.clone(),
-        secondary,
-        config(ModelPolicy::ExternalOnly, 3, 60),
-    );
-
-    let outcome = adapter.generate_with_info(request()).await.unwrap();
-    assert_eq!(outcome.provider_id.0, "external:mock:s");
-    assert_eq!(outcome.switch.unwrap().trigger, FallbackTrigger::Manual);
-    assert_eq!(primary.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
 }

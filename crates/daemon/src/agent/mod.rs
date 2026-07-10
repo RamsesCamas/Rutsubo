@@ -95,7 +95,7 @@ async fn run_turn(app: &App, session_id: SessionId) -> Result<(), Box<dyn std::e
         .await?;
 
         let mut stream = outcome.stream;
-        let mut pending: Option<ToolCallRequest> = None;
+        let mut pending: Vec<ToolCallRequest> = Vec::new();
         let mut done: Option<(StopReason, Usage)> = None;
 
         while let Some(item) = stream.next().await {
@@ -106,12 +106,10 @@ async fn run_turn(app: &App, session_id: SessionId) -> Result<(), Box<dyn std::e
                         .await?;
                 }
                 Ok(StreamItem::ToolCall(tc)) => {
-                    pending = Some(tc);
-                    break;
+                    pending.push(tc);
                 }
                 Ok(StreamItem::Done(stop, usage)) => {
                     done = Some((stop, usage));
-                    break;
                 }
                 Err(ProviderError::Cancelled) => {
                     done = Some((
@@ -142,12 +140,14 @@ async fn run_turn(app: &App, session_id: SessionId) -> Result<(), Box<dyn std::e
             }
         }
 
-        if let Some((stop_reason, usage)) = done {
+        if pending.is_empty()
+            && let Some((stop_reason, usage)) = done
+        {
             return finish_completed(app, session_id, message_id, &collected, stop_reason, usage)
                 .await;
         }
 
-        let Some(tc) = pending else {
+        if pending.is_empty() {
             // Stream agotado sin Done: cierre defensivo.
             return finish_completed(
                 app,
@@ -161,35 +161,31 @@ async fn run_turn(app: &App, session_id: SessionId) -> Result<(), Box<dyn std::e
                 },
             )
             .await;
-        };
-
-        app.emit(
-            session_id,
-            Event::ToolCallRequested {
-                tool_call_id: tc.tool_call_id,
-                tool: tc.tool.clone(),
-                args: tc.args.clone(),
-            },
-            None,
-        )
-        .await?;
+        }
         turn_msgs.push(ChatMessage {
             role: "assistant".into(),
-            content: format!("[tool_call] {} {}", tc.tool, tc.args),
+            content: String::new(),
+            tool_calls: pending.clone(),
+            tool_call_id: None,
+            provider_tool_call_id: None,
         });
-
-        let (result, rejected) = run_gated_tool(app, &ctx, &tc).await?;
-        turn_msgs.push(ChatMessage {
-            role: "tool".into(),
-            content: json!({
-                "tool": tc.tool,
-                "tool_call_id": tc.tool_call_id.to_string(),
-                "ok": result.ok,
-                "rejected": rejected,
-                "output": result.output,
-            })
-            .to_string(),
-        });
+        for tc in pending {
+            app.emit(
+                session_id,
+                Event::ToolCallRequested {
+                    tool_call_id: tc.tool_call_id,
+                    tool: tc.tool.clone(),
+                    args: tc.args.clone(),
+                },
+                None,
+            )
+            .await?;
+            let (result, rejected) = run_gated_tool(app, &ctx, &tc).await?;
+            turn_msgs.push(ChatMessage {
+                role: "tool".into(), content: json!({ "tool": tc.tool, "tool_call_id": tc.tool_call_id.to_string(), "ok": result.ok, "rejected": rejected, "output": result.output }).to_string(),
+                tool_calls: vec![], tool_call_id: Some(tc.tool_call_id), provider_tool_call_id: tc.provider_call_id,
+            });
+        }
     }
 
     // Tope de iteraciones (RF-06).

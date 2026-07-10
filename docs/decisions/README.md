@@ -13,7 +13,7 @@ Diseño* (RF-01…RF-31, RNF-01…RNF-18) y *ADRs y Contratos de Servicio*
 | ADR-003 (Rust/Axum/tokio/sqlx) | todo el workspace; búsqueda con crates de ripgrep (`tools/search.rs`) |
 | ADR-004 (contrato único en `core` + ts-rs) | `crates/core` + `bindings/` generados (`just bindings`) |
 | ADR-005 (SQLite embebido, WAL) | `store/` + `migrations/`; consultas verificadas en compilación (caché `.sqlx/`) |
-| ADR-008 (adapter local-first con fallback) | `llm/fallback.rs` según tabla normativa C-4 |
+| ADR-008 (adapter remoto Groq con fallback) | `llm/fallback.rs` y `llm/groq.rs` |
 
 ADR-002/006/007 (superficies, relay, móvil) aplican a otros repos/fases; el
 bus de eventos interno (`state.rs`) es el punto donde el relay de C-2 se
@@ -53,3 +53,9 @@ colgará en la fase siguiente.
 8. **Truncado de salida uniforme.** El handoff exige 64 KB para `run_shell`;
    se aplica el mismo tope a toda herramienta (`tools/mod.rs`):
    `output_excerpt` es un extracto por contrato.
+9. **Enmienda Groq (julio 2026).** La configuración pasa a ser
+   `primary`/`fallback` remotos Groq y añade los triggers `rate_limited` y
+   `asr_failed`. Una clave ausente deja al daemon en estado degradado con
+   `reason: missing_api_key`; no se expone, registra ni persiste la clave.
+   ASR recibe únicamente audio multipart en memoria (máximo 25 MB) y audita
+   sólo duración y tamaño.

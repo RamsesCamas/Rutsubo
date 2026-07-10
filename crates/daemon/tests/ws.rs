@@ -25,7 +25,7 @@ async fn spawn_server() -> (App, SocketAddr, tempfile::TempDir) {
         bind: "127.0.0.1:0".parse().unwrap(),
         max_iterations: 20,
         spa_origin: None,
-        external_api_key: None,
+        groq_api_key: None,
     };
     let app = AppState::bootstrap(cfg).await.unwrap();
     let router = rutsubo_daemon::api::router(app.clone());

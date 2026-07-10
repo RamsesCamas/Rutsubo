@@ -22,11 +22,17 @@ pub fn build(workspace: &Path, history: &[MessageRow], turn: &[ChatMessage]) -> 
              relativa al workspace.",
             workspace.display()
         ),
+        tool_calls: vec![],
+        tool_call_id: None,
+        provider_tool_call_id: None,
     });
     let skip = history.len().saturating_sub(MAX_HISTORY);
     messages.extend(history.iter().skip(skip).map(|m| ChatMessage {
         role: m.role.clone(),
         content: m.content.clone(),
+        tool_calls: vec![],
+        tool_call_id: None,
+        provider_tool_call_id: None,
     }));
     messages.extend(turn.iter().cloned());
     messages

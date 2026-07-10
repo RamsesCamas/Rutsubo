@@ -91,6 +91,7 @@ impl MockProvider {
                 tool_call_id: ToolCallId::new(),
                 tool: "read_file".into(),
                 args: json!({"path": file}),
+                provider_call_id: None,
             }));
             return items;
         }
@@ -103,6 +104,7 @@ impl MockProvider {
                     tool_call_id: ToolCallId::new(),
                     tool: "run_shell".into(),
                     args: json!({"cmd": "cargo test -p core"}),
+                    provider_call_id: None,
                 }),
             ];
         }
@@ -121,6 +123,7 @@ impl MockProvider {
                             last_user.chars().take(120).collect::<String>()
                         ),
                     }),
+                    provider_call_id: None,
                 }),
             ];
         }
@@ -190,6 +193,8 @@ pub enum FailMode {
     Transport,
     /// `generate` devuelve InvalidResponse.
     InvalidResponse,
+    /// El proveedor respondió 429 con Retry-After.
+    RateLimited,
     /// El primer item del stream tarda más que cualquier TTFT razonable.
     SlowFirstItem,
     /// Emite deltas y luego falla a mitad de streaming.
@@ -251,6 +256,7 @@ impl LlmProvider for FailingMock {
             FailMode::InvalidResponse => {
                 Err(ProviderError::InvalidResponse("JSON malformado".into()))
             }
+            FailMode::RateLimited => Err(ProviderError::RateLimited { retry_after_s: 30 }),
             FailMode::SlowFirstItem => {
                 let cancel = req.cancel.clone();
                 Ok(Box::pin(futures::stream::once(async move {

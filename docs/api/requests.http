@@ -100,21 +100,20 @@ Content-Type: application/json
   ]
 }
 
-### 11 · GET /v1/config/model — política del adapter LLM (C-4)
+### 11 · GET /v1/config/model — proveedores Groq del adapter LLM
 GET {{base}}/v1/config/model
 Authorization: Bearer {{token}}
 
 ### 11b · PUT /v1/config/model — reemplazo completo (sin PATCH); aplica a
-#      partir de la siguiente llamada; external_only sin credenciales → 422
+#      partir de la siguiente llamada; sin GROQ_API_KEY → 422
 PUT {{base}}/v1/config/model
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
-  "policy": "local_first",
-  "local": { "endpoint": "http://127.0.0.1:8000", "model": "qwen3.5-8b" },
-  "external": { "provider": "anthropic", "model": "claude-sonnet-4-6" },
-  "fallback": { "ttft_threshold_ms": 5000, "failure_window": 3, "cooldown_s": 60 }
+  "primary": { "provider": "groq", "model": "qwen/qwen3.6-27b" },
+  "fallback": { "provider": "groq", "model": "openai/gpt-oss-120b" },
+  "thresholds": { "ttft_threshold_ms": 5000, "failure_window": 3, "cooldown_s": 60 }
 }
 
 ### 12 · GET /v1/audit — paginado, filtros por sesión y proveedor (RF-22)
@@ -124,6 +123,18 @@ Authorization: Bearer {{token}}
 ### 12b · filtro por proveedor
 GET {{base}}/v1/audit?provider=local:mock:qwen3.5-8b
 Authorization: Bearer {{token}}
+
+### 13 · POST /v1/asr/transcribe — audio multipart (máximo 25 MB)
+POST {{base}}/v1/asr/transcribe
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=RutsuboBoundary
+
+--RutsuboBoundary
+Content-Disposition: form-data; name="audio"; filename="sample.webm"
+Content-Type: audio/webm
+
+< ./sample.webm
+--RutsuboBoundary--
 
 # WebSocket (Fase D, contrato C-3): no es HTTP plano, se prueba con wscat:
 #   npx wscat -c "ws://127.0.0.1:7431/v1/ws?token=$(cat ~/.local/share/rutsubo/token)"

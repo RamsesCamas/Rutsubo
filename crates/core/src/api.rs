@@ -21,6 +21,7 @@ pub enum ErrorCode {
     ValidationFailed,
     Conflict,
     SessionBusy,
+    AsrFailed,
     Internal,
 }
 
@@ -57,6 +58,8 @@ pub enum ProviderHealth {
 pub struct ProviderStatus {
     pub id: String,
     pub health: ProviderHealth,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -268,69 +271,59 @@ pub struct PutRulesRequest {
 
 // ---- Configuración del adapter LLM (GET/PUT /v1/config/model) ----
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-#[ts(export)]
-pub enum ModelPolicy {
-    LocalFirst,
-    LocalOnly,
-    ExternalOnly,
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
-pub struct LocalModelConfig {
-    pub endpoint: String,
-    pub model: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct ExternalModelConfig {
+pub struct ModelRef {
     pub provider: String,
     pub model: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
-pub struct FallbackConfig {
+pub struct Thresholds {
     #[ts(type = "number")]
     pub ttft_threshold_ms: u64,
     pub failure_window: u32,
     pub cooldown_s: u32,
 }
 
-/// Política completa del adapter (C-1). El PUT reemplaza el objeto entero;
-/// aplica a partir de la siguiente llamada al modelo, jamás interrumpe una
-/// generación en curso.
+/// Configuración primaria/fallback remota. El PUT aplica al siguiente turno.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ModelConfig {
-    pub policy: ModelPolicy,
-    pub local: LocalModelConfig,
-    pub external: ExternalModelConfig,
-    pub fallback: FallbackConfig,
+    pub primary: ModelRef,
+    pub fallback: ModelRef,
+    pub thresholds: Thresholds,
 }
 
 impl Default for ModelConfig {
     fn default() -> Self {
         Self {
-            policy: ModelPolicy::LocalFirst,
-            local: LocalModelConfig {
-                endpoint: "http://127.0.0.1:8000".into(),
-                model: "qwen3.5-8b".into(),
+            primary: ModelRef {
+                provider: "groq".into(),
+                model: "qwen/qwen3.6-27b".into(),
             },
-            external: ExternalModelConfig {
-                provider: "anthropic".into(),
-                model: "claude-sonnet-4-6".into(),
+            fallback: ModelRef {
+                provider: "groq".into(),
+                model: "openai/gpt-oss-120b".into(),
             },
-            fallback: FallbackConfig {
+            thresholds: Thresholds {
                 ttft_threshold_ms: 5000,
                 failure_window: 3,
                 cooldown_s: 60,
             },
         }
     }
+}
+
+/// Resultado de la transcripción ASR. El audio nunca se persiste.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct AsrResponse {
+    pub text: String,
+    #[ts(type = "number")]
+    pub duration_ms: u64,
+    pub model: String,
 }
 
 // ---- Audit log (GET /v1/audit) ----

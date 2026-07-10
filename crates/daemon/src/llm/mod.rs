@@ -5,6 +5,7 @@
 //! fase posterior) es implementar este trait sin tocar el loop.
 
 pub mod fallback;
+pub mod groq;
 pub mod mock;
 
 use async_trait::async_trait;
@@ -21,6 +22,10 @@ pub struct ChatMessage {
     /// `system` | `user` | `assistant` | `tool`
     pub role: String,
     pub content: String,
+    pub tool_calls: Vec<ToolCallRequest>,
+    pub tool_call_id: Option<ToolCallId>,
+    /// ID del proveedor para el mensaje `tool` de una conversación remota.
+    pub provider_tool_call_id: Option<String>,
 }
 
 /// Esquema JSON de los argumentos de una herramienta (del Tool Registry, RF-12).
@@ -50,6 +55,8 @@ pub struct ToolCallRequest {
     pub tool_call_id: ToolCallId,
     pub tool: String,
     pub args: serde_json::Value,
+    /// ID emitido por el proveedor; se devuelve en el mensaje `tool` remoto.
+    pub provider_call_id: Option<String>,
 }
 
 /// El stream emite items tipados; el loop los traduce a eventos C-3.
@@ -69,6 +76,8 @@ pub enum ProviderError {
     /// Dispara fallback inmediato (RF-21).
     #[error("proveedor sin memoria (OOM)")]
     OutOfMemory,
+    #[error("rate limited; reintentar en {retry_after_s}s")]
+    RateLimited { retry_after_s: u64 },
     #[error("timeout tras {after_ms} ms")]
     Timeout { after_ms: u64 },
     /// Red/HTTP; cuenta para la ventana de fallos.

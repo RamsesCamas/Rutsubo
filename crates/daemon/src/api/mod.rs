@@ -3,6 +3,7 @@
 //! seguridad (listo para el escaneo ZAP del primer corte).
 
 pub mod approvals;
+pub mod asr;
 pub mod audit;
 pub mod config;
 pub mod health;
@@ -34,6 +35,7 @@ pub fn router(app: App) -> Router {
             get(config::get_model).put(config::put_model),
         )
         .route("/v1/audit", get(audit::query))
+        .route("/v1/asr/transcribe", post(asr::transcribe))
         .route_layer(middleware::from_fn_with_state(
             app.clone(),
             crate::auth::require_bearer,

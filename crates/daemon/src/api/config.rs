@@ -11,7 +11,7 @@ use crate::store;
 use axum::Json;
 use axum::extract::State;
 use chrono::Utc;
-use rutsubo_core::api::{ModelConfig, ModelPolicy};
+use rutsubo_core::api::ModelConfig;
 use serde_json::json;
 
 pub async fn get_model(State(app): State<App>) -> Json<ModelConfig> {
@@ -22,22 +22,28 @@ pub async fn put_model(
     State(app): State<App>,
     ApiJson(req): ApiJson<ModelConfig>,
 ) -> Result<Json<ModelConfig>, ApiError> {
-    if req.policy == ModelPolicy::ExternalOnly && app.cfg.external_api_key.is_none() {
+    if app.cfg.groq_api_key.is_none() {
         return Err(ApiError::validation(
-            "external_only requiere credenciales configuradas (RUTSUBO_EXTERNAL_API_KEY)",
-            Some(json!({"field": "policy"})),
+            "GROQ_API_KEY no está configurada",
+            Some(json!({"field": "GROQ_API_KEY"})),
         ));
     }
-    if !req.local.endpoint.starts_with("http://") && !req.local.endpoint.starts_with("https://") {
+    if req.primary.provider != "groq" || req.fallback.provider != "groq" {
         return Err(ApiError::validation(
-            "local.endpoint debe ser una URL http(s)",
-            Some(json!({"field": "local.endpoint"})),
+            "primary.provider y fallback.provider deben ser groq",
+            Some(json!({"field": "provider"})),
         ));
     }
-    if req.fallback.failure_window == 0 {
+    if req.primary.model.trim().is_empty() || req.fallback.model.trim().is_empty() {
         return Err(ApiError::validation(
-            "fallback.failure_window debe ser ≥ 1",
-            Some(json!({"field": "fallback.failure_window"})),
+            "los modelos no pueden estar vacíos",
+            Some(json!({"field": "model"})),
+        ));
+    }
+    if req.thresholds.failure_window == 0 {
+        return Err(ApiError::validation(
+            "thresholds.failure_window debe ser ≥ 1",
+            Some(json!({"field": "thresholds.failure_window"})),
         ));
     }
 
@@ -49,10 +55,9 @@ pub async fn put_model(
         None,
         "config",
         &json!({
-            "what": "model_policy_replaced",
-            "policy": req.policy,
-            "local_model": req.local.model,
-            "external_model": req.external.model,
+            "what": "model_config_replaced",
+            "primary_model": req.primary.model,
+            "fallback_model": req.fallback.model,
         }),
         Utc::now(),
     )

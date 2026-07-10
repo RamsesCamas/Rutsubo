@@ -20,7 +20,7 @@ async fn test_app() -> (App, Router, tempfile::TempDir) {
         bind: "127.0.0.1:0".parse().unwrap(),
         max_iterations: 20,
         spa_origin: None,
-        external_api_key: None,
+        groq_api_key: None,
     };
     let app = AppState::bootstrap(cfg).await.unwrap();
     let router = api::router(app.clone());
@@ -51,6 +51,23 @@ async fn send(router: &Router, req: Request<Body>) -> (StatusCode, Value) {
         serde_json::from_slice(&bytes).unwrap_or(Value::Null)
     };
     (status, value)
+}
+
+fn multipart_audio(token: &str, mime: &str, bytes: &[u8]) -> Request<Body> {
+    const BOUNDARY: &str = "rutsubo-test-boundary";
+    let mut body = format!("--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"audio\"; filename=\"test.webm\"\r\nContent-Type: {mime}\r\n\r\n").into_bytes();
+    body.extend_from_slice(bytes);
+    body.extend_from_slice(format!("\r\n--{BOUNDARY}--\r\n").as_bytes());
+    Request::builder()
+        .method("POST")
+        .uri("/v1/asr/transcribe")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={BOUNDARY}"),
+        )
+        .body(Body::from(body))
+        .unwrap()
 }
 
 /// Crea una sesión sobre un workspace temporal y devuelve su id.
@@ -84,12 +101,13 @@ async fn health_sin_auth_y_con_headers_de_seguridad() {
     );
     let body: Value =
         serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
-    assert_eq!(body["status"], "ok");
+    assert_eq!(body["status"], "down");
+    assert_eq!(body["provider"]["reason"], "missing_api_key");
     assert!(
         body["provider"]["id"]
             .as_str()
             .unwrap()
-            .starts_with("local:")
+            .starts_with("groq:missing:")
     );
 }
 
@@ -548,12 +566,11 @@ async fn config_model_get_y_put() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["policy"], "local_first");
-    assert_eq!(body["fallback"]["ttft_threshold_ms"], 5000);
+    assert_eq!(body["primary"]["provider"], "groq");
+    assert_eq!(body["thresholds"]["ttft_threshold_ms"], 5000);
 
-    // PUT external_only sin credenciales → 422 (el test app no tiene api key).
-    let mut cfg = body.clone();
-    cfg["policy"] = json!("external_only");
+    // PUT sin GROQ_API_KEY → 422 (el test app no tiene api key).
+    let cfg = body.clone();
     let (status, body) = send(
         &router,
         request("PUT", "/v1/config/model", Some(&token), Some(cfg.clone())),
@@ -561,31 +578,32 @@ async fn config_model_get_y_put() {
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body["error"]["code"], "validation_failed");
+}
 
-    // PUT válido (local_only) → 200 y queda vigente.
-    cfg["policy"] = json!("local_only");
-    let (status, _) = send(
+#[tokio::test]
+async fn asr_mock_valida_mime_y_audita_sin_audio() {
+    let (app, router, _dir) = test_app().await;
+    let (status, body) = send(
         &router,
-        request("PUT", "/v1/config/model", Some(&token), Some(cfg)),
+        multipart_audio(&app.token, "audio/webm", b"not-real-audio"),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let (_, body) = send(
-        &router,
-        request("GET", "/v1/config/model", Some(&token), None),
-    )
-    .await;
-    assert_eq!(body["policy"], "local_only");
+    assert_eq!(body["text"], "transcripción de prueba");
 
-    // El cambio quedó en el audit log.
-    let (_, audit) = send(&router, request("GET", "/v1/audit", Some(&token), None)).await;
-    let kinds: Vec<&str> = audit["entries"]
+    let (_, audit) = send(&router, request("GET", "/v1/audit", Some(&app.token), None)).await;
+    let asr = audit["entries"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|e| e["kind"].as_str().unwrap())
-        .collect();
-    assert!(kinds.contains(&"config"));
+        .find(|entry| entry["kind"] == "asr")
+        .unwrap();
+    assert!(asr["detail"].get("bytes").is_some());
+    assert!(asr["detail"].get("audio").is_none());
+
+    let (status, body) = send(&router, multipart_audio(&app.token, "text/plain", b"no")).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(body["error"]["code"], "validation_failed");
 }
 
 #[tokio::test]

@@ -18,10 +18,8 @@ pub struct DaemonConfig {
     pub max_iterations: u32,
     /// Origin adicional permitido por CORS (producción de la SPA).
     pub spa_origin: Option<String>,
-    /// Credencial del proveedor externo, capturada al arranque
-    /// (`RUTSUBO_EXTERNAL_API_KEY` o `ANTHROPIC_API_KEY`). Sin ella,
-    /// `policy = external_only` se rechaza con 422 (C-1).
-    pub external_api_key: Option<String>,
+    /// Credencial Groq, capturada al arranque y nunca expuesta por la API.
+    pub groq_api_key: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -36,6 +34,7 @@ pub enum ConfigError {
 
 impl DaemonConfig {
     pub fn from_env() -> Result<Self, ConfigError> {
+        let _ = dotenvy::dotenv();
         let bind_raw = std::env::var("RUTSUBO_BIND").unwrap_or_else(|_| DEFAULT_BIND.into());
         let bind: SocketAddr = bind_raw
             .parse()
@@ -60,16 +59,14 @@ impl DaemonConfig {
             .ok()
             .filter(|s| !s.is_empty());
 
-        let external_api_key = ["RUTSUBO_EXTERNAL_API_KEY", "ANTHROPIC_API_KEY"]
-            .iter()
-            .find_map(|var| std::env::var(var).ok().filter(|v| !v.is_empty()));
+        let groq_api_key = std::env::var("GROQ_API_KEY").ok().filter(|v| !v.is_empty());
 
         Ok(Self {
             data_dir,
             bind,
             max_iterations,
             spa_origin,
-            external_api_key,
+            groq_api_key,
         })
     }
 }
