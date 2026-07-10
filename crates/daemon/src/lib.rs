@@ -10,5 +10,7 @@ pub mod auth;
 pub mod config;
 pub mod error;
 pub mod gate;
+pub mod llm;
 pub mod state;
 pub mod store;
+pub mod tools;

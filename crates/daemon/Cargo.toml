@@ -22,6 +22,9 @@ tower-http = { version = "0.6", features = ["cors", "set-header", "trace"] }
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate", "macros", "chrono"] }
 async-trait = "0.1"
 futures = "0.3"
+grep-searcher = "0.1"
+grep-regex = "0.1"
+ignore = "0.4"
 subtle = "2"
 rand = "0.9"
 base64 = "0.22"
@@ -32,5 +35,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 [dev-dependencies]
 tempfile = "3"
 http-body-util = "0.1"
+tokio = { version = "1", features = ["full", "test-util"] }
 tokio-tungstenite = "0.26"
 tower = { version = "0.5", features = ["util"] }

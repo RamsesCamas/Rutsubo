@@ -1,13 +1,17 @@
 //! Estado compartido del daemon.
 
 use crate::config::DaemonConfig;
+use crate::llm::fallback::FallbackAdapter;
+use crate::llm::mock::MockProvider;
 use crate::store;
 use crate::store::events::AppendError;
-use rutsubo_core::api::{ModelConfig, ProviderHealth, ProviderStatus};
+use crate::tools::ToolRegistry;
+use rutsubo_core::api::ModelConfig;
 use rutsubo_core::envelope::Envelope;
 use rutsubo_core::events::{Event, SessionState};
 use rutsubo_core::ids::SessionId;
 use sqlx::SqlitePool;
+use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::{RwLock, broadcast};
 
@@ -20,18 +24,24 @@ pub struct AppState {
     /// Bus de eventos vivo: todo evento persistido se difunde aquí (WS local
     /// en Fase D; el relay de C-2 se colgaría del mismo bus en fase futura).
     pub bus: broadcast::Sender<Envelope<Event>>,
-    /// Política vigente del adapter (C-1 `/v1/config/model`). Se lee al
-    /// inicio de cada llamada al modelo: un PUT jamás interrumpe una
-    /// generación en curso.
-    pub model_config: RwLock<ModelConfig>,
-    /// Proveedor activo reportado por `/v1/health`.
-    pub provider_status: RwLock<ProviderStatus>,
+    /// Política vigente del adapter (C-1 `/v1/config/model`). El adapter la
+    /// lee al inicio de cada llamada: un PUT jamás interrumpe una generación
+    /// en curso.
+    pub model_config: Arc<RwLock<ModelConfig>>,
     /// Compuerta de permisos: aprobaciones pendientes esperando decisión.
     pub gate: crate::gate::Gate,
+    /// Adapter LLM compuesto (C-4): MockProvider en esta fase; enchufar
+    /// vLLM/Ollama/API real es implementar `LlmProvider` sin tocar el loop.
+    pub llm: Arc<FallbackAdapter>,
+    /// Registro de las 5 herramientas (RF-12).
+    pub tools: Arc<ToolRegistry>,
+    /// Sesiones con turno agéntico en curso (RF-16: suspensión por sesión).
+    pub running: std::sync::Mutex<HashSet<SessionId>>,
 }
 
 impl AppState {
-    /// Arranque completo: base de datos, token y configuración persistida.
+    /// Arranque completo: base de datos, token, configuración persistida y
+    /// adapter LLM.
     pub async fn bootstrap(cfg: DaemonConfig) -> Result<App, Box<dyn std::error::Error>> {
         let pool = store::open(&cfg.data_dir).await?;
         let token = crate::auth::load_or_create_token(&cfg.data_dir)?;
@@ -43,19 +53,32 @@ impl AppState {
                 def
             }
         };
-        let provider_status = ProviderStatus {
-            id: format!("local:mock:{}", model_config.local.model),
-            health: ProviderHealth::Ready,
-        };
+        let primary = Arc::new(MockProvider::new(format!(
+            "local:mock:{}",
+            model_config.local.model
+        )));
+        let secondary = Arc::new(MockProvider::new(format!(
+            "external:mock:{}",
+            model_config.external.model
+        )));
+        let model_config = Arc::new(RwLock::new(model_config));
+        let llm = Arc::new(FallbackAdapter::new(
+            primary,
+            secondary,
+            model_config.clone(),
+        ));
+
         let (bus, _) = broadcast::channel(1024);
         Ok(Arc::new(Self {
             cfg,
             pool,
             token,
             bus,
-            model_config: RwLock::new(model_config),
-            provider_status: RwLock::new(provider_status),
+            model_config,
             gate: crate::gate::Gate::default(),
+            llm,
+            tools: Arc::new(ToolRegistry::standard()),
+            running: std::sync::Mutex::new(HashSet::new()),
         }))
     }
 
