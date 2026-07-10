@@ -37,6 +37,7 @@ pub enum Command {
     /// Suscribirse al flujo vivo de una sesión, con replay desde `after_seq`.
     SubscribeSession {
         session_id: SessionId,
+        #[ts(type = "number")]
         after_seq: u64,
     },
     /// Dejar de recibir eventos de una sesión.

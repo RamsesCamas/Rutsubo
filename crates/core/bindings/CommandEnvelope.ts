@@ -13,4 +13,4 @@ export type CommandEnvelope = { v: number,
 /**
  * Sesión objetivo (`send_message`); `null` en comandos globales.
  */
-session_id: SessionId | null, ts: string, } & ({ "type": "send_message", "payload": { content: string, client_msg_id: string, } } | { "type": "resolve_approval", "payload": { approval_id: ApprovalId, decision: Decision, reason?: string | null, remember_rule?: boolean | null, } } | { "type": "subscribe_session", "payload": { session_id: SessionId, after_seq: bigint, } } | { "type": "unsubscribe_session", "payload": { session_id: SessionId, } });
+session_id: SessionId | null, ts: string, } & ({ "type": "send_message", "payload": { content: string, client_msg_id: string, } } | { "type": "resolve_approval", "payload": { approval_id: ApprovalId, decision: Decision, reason?: string | null, remember_rule?: boolean | null, } } | { "type": "subscribe_session", "payload": { session_id: SessionId, after_seq: number, } } | { "type": "unsubscribe_session", "payload": { session_id: SessionId, } });

@@ -7,4 +7,4 @@ import type { SessionId } from "./SessionId";
  * Comandos v1 (contrato C-3). La sesión objetivo de `send_message` viaja en
  * `session_id` del sobre.
  */
-export type Command = { "type": "send_message", "payload": { content: string, client_msg_id: string, } } | { "type": "resolve_approval", "payload": { approval_id: ApprovalId, decision: Decision, reason?: string | null, remember_rule?: boolean | null, } } | { "type": "subscribe_session", "payload": { session_id: SessionId, after_seq: bigint, } } | { "type": "unsubscribe_session", "payload": { session_id: SessionId, } };
+export type Command = { "type": "send_message", "payload": { content: string, client_msg_id: string, } } | { "type": "resolve_approval", "payload": { approval_id: ApprovalId, decision: Decision, reason?: string | null, remember_rule?: boolean | null, } } | { "type": "subscribe_session", "payload": { session_id: SessionId, after_seq: number, } } | { "type": "unsubscribe_session", "payload": { session_id: SessionId, } };
