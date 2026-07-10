@@ -1,0 +1,7 @@
+[build]
+buildCommand = "cargo build --release -p rutsubo-daemon"
+
+[deploy]
+startCommand = "./target/release/rutsubo-daemon"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3

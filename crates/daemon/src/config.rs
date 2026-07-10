@@ -39,7 +39,9 @@ impl DaemonConfig {
         let bind: SocketAddr = bind_raw
             .parse()
             .map_err(|_| ConfigError::InvalidBind(bind_raw.clone()))?;
-        if !is_loopback(bind.ip()) {
+        let allow_non_loopback =
+            std::env::var("RUTSUBO_ALLOW_NON_LOOPBACK").is_ok_and(|v| v == "1");
+        if !is_loopback(bind.ip()) && !allow_non_loopback {
             return Err(ConfigError::NonLoopbackBind(bind));
         }
 
