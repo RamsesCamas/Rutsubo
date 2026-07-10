@@ -133,9 +133,9 @@ async fn turno_completo_con_aprobacion_de_write_file() {
     // transición (transaccional con su evento) para evitar la carrera.
     let events = wait_for_events(&router, &token, &sid, |ev| {
         has_kind(ev, "approval_request")
-            && ev
-                .iter()
-                .any(|e| e["type"] == "session_state" && e["payload"]["state"] == "waiting_approval")
+            && ev.iter().any(|e| {
+                e["type"] == "session_state" && e["payload"]["state"] == "waiting_approval"
+            })
     })
     .await;
     assert!(has_kind(&events, "message_delta"));
