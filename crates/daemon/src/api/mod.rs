@@ -55,6 +55,9 @@ pub fn router(app: App) -> Router {
 
     Router::new()
         .route("/v1/health", get(health::health))
+        // /v1/ws hace su propia auth: Bearer o ?token= (excepción local
+        // documentada para el handshake del navegador).
+        .route("/v1/ws", get(crate::ws::ws_handler))
         .merge(protected)
         .layer(cors)
         .layer(SetResponseHeaderLayer::overriding(

@@ -193,8 +193,20 @@ pub async fn post_message(
     Path(id): Path<String>,
     ApiJson(req): ApiJson<SendMessageRequest>,
 ) -> Result<(StatusCode, Json<SendMessageResponse>), ApiError> {
-    let id = parse_session_id(&id)?;
-    let row = load_session(&app, &id).await?;
+    let response = send_message_inner(&app, &id, req).await?;
+    Ok((StatusCode::ACCEPTED, Json(response)))
+}
+
+/// Núcleo compartido REST/WS del envío de mensajes (C-3: el comando
+/// `send_message` es equivalente exacto del endpoint — misma validación,
+/// misma idempotencia, mismo código).
+pub async fn send_message_inner(
+    app: &App,
+    raw_id: &str,
+    req: SendMessageRequest,
+) -> Result<SendMessageResponse, ApiError> {
+    let id = parse_session_id(raw_id)?;
+    let row = load_session(app, &id).await?;
     let state = row
         .session_state()
         .ok_or_else(|| ApiError::internal("estado de sesión corrupto"))?;
@@ -262,14 +274,11 @@ pub async fn post_message(
         }
     };
 
-    Ok((
-        StatusCode::ACCEPTED,
-        Json(SendMessageResponse {
-            message_id,
-            session_state,
-            accepted_at: now,
-        }),
-    ))
+    Ok(SendMessageResponse {
+        message_id,
+        session_state,
+        accepted_at: now,
+    })
 }
 
 /// GET /v1/sessions/{id}/events — replay (C-1): orden ascendente, `limit`

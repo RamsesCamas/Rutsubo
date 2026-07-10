@@ -14,3 +14,4 @@ pub mod llm;
 pub mod state;
 pub mod store;
 pub mod tools;
+pub mod ws;
