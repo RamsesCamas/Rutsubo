@@ -5,6 +5,7 @@
 //! `Authorization: Bearer <token>` en toda ruta salvo `/v1/health`.
 //! La comparación es en tiempo constante.
 
+use crate::config::AuthMode;
 use crate::error::ApiError;
 use crate::state::App;
 use axum::extract::{Request, State};
@@ -66,6 +67,34 @@ pub async fn require_bearer(
     req: Request,
     next: Next,
 ) -> Result<Response, ApiError> {
+    if app.cfg.auth_mode == AuthMode::Remote {
+        let user = req
+            .headers()
+            .get("x-rutsubo-user")
+            .and_then(|v| v.to_str().ok());
+        let proxy_ok = req
+            .headers()
+            .get(axum::http::header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .is_some_and(|token| {
+                app.cfg
+                    .proxy_secret
+                    .as_deref()
+                    .is_some_and(|expected| token_matches(expected, token))
+            });
+        let allowed = user.is_some_and(|email| {
+            app.cfg
+                .allowed_emails
+                .iter()
+                .any(|allowed| allowed == &email.to_ascii_lowercase())
+        });
+        return if proxy_ok && allowed {
+            Ok(next.run(req).await)
+        } else {
+            Err(ApiError::unauthorized())
+        };
+    }
     let presented = req
         .headers()
         .get(axum::http::header::AUTHORIZATION)

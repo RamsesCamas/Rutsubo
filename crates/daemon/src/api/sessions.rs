@@ -48,16 +48,17 @@ pub async fn create(
         )
     };
 
+    let remote = app.cfg.auth_mode == crate::config::AuthMode::Remote;
     let ws = FsPath::new(&req.workspace_path);
-    if !ws.is_absolute() {
+    if !remote && !ws.is_absolute() {
         return Err(ws_error("debe ser una ruta absoluta"));
     }
-    if ws.components().any(|c| c == Component::ParentDir) {
+    if !remote && ws.components().any(|c| c == Component::ParentDir) {
         return Err(ws_error(
             "no debe contener secuencias de traversal (RNF-05)",
         ));
     }
-    if !ws.is_dir() {
+    if !remote && !ws.is_dir() {
         return Err(ws_error("debe existir y ser un directorio"));
     }
     let title = req.title.unwrap_or_default();
@@ -69,7 +70,12 @@ pub async fn create(
     }
 
     let id = SessionId::new();
-    store::sessions::create(&app.pool, &id, &req.workspace_path, &title, Utc::now()).await?;
+    let workspace_path = if remote {
+        "remote://chat"
+    } else {
+        &req.workspace_path
+    };
+    store::sessions::create(&app.pool, &id, workspace_path, &title, Utc::now()).await?;
     app.emit(
         id,
         Event::SessionState {

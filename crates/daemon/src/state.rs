@@ -86,6 +86,11 @@ impl AppState {
             Some(key) => Arc::new(crate::asr::GroqTranscriber::new(key.clone())),
             None => Arc::new(crate::asr::MockTranscriber),
         };
+        let tools = Arc::new(if cfg.auth_mode == crate::config::AuthMode::Remote {
+            ToolRegistry::default()
+        } else {
+            ToolRegistry::standard()
+        });
         let (bus, _) = broadcast::channel(1024);
         Ok(Arc::new(Self {
             cfg,
@@ -95,7 +100,7 @@ impl AppState {
             model_config,
             gate: crate::gate::Gate::default(),
             llm,
-            tools: Arc::new(ToolRegistry::standard()),
+            tools,
             transcriber,
             running: std::sync::Mutex::new(HashSet::new()),
         }))

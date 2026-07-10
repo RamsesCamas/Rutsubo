@@ -21,6 +21,9 @@ async fn test_app() -> (App, Router, tempfile::TempDir) {
         max_iterations: 20,
         spa_origin: None,
         groq_api_key: None,
+        auth_mode: rutsubo_daemon::config::AuthMode::Local,
+        proxy_secret: None,
+        allowed_emails: vec![],
     };
     let app = AppState::bootstrap(cfg).await.unwrap();
     let router = api::router(app.clone());

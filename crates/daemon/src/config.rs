@@ -6,6 +6,12 @@ use std::path::PathBuf;
 /// Puerto fijo del contrato C-1.
 pub const DEFAULT_BIND: &str = "127.0.0.1:7431";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthMode {
+    Local,
+    Remote,
+}
+
 #[derive(Debug, Clone)]
 pub struct DaemonConfig {
     /// Directorio de datos (token, daemon.db). `RUTSUBO_DATA_DIR` lo
@@ -20,6 +26,12 @@ pub struct DaemonConfig {
     pub spa_origin: Option<String>,
     /// Credencial Groq, capturada al arranque y nunca expuesta por la API.
     pub groq_api_key: Option<String>,
+    /// Local conserva el token del daemon; remote acepta únicamente al BFF.
+    pub auth_mode: AuthMode,
+    /// Secreto compartido exclusivamente entre Vercel y Railway.
+    pub proxy_secret: Option<String>,
+    /// Correos permitidos para el acceso remoto inicial.
+    pub allowed_emails: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -30,6 +42,8 @@ pub enum ConfigError {
     InvalidBind(String),
     #[error("no se pudo determinar el directorio de datos")]
     NoDataDir,
+    #[error("RUTSUBO_PROXY_SECRET es obligatorio en modo remote")]
+    MissingProxySecret,
 }
 
 impl DaemonConfig {
@@ -66,6 +80,22 @@ impl DaemonConfig {
             .filter(|s| !s.is_empty());
 
         let groq_api_key = std::env::var("GROQ_API_KEY").ok().filter(|v| !v.is_empty());
+        let auth_mode = match std::env::var("RUTSUBO_AUTH_MODE").as_deref() {
+            Ok("remote") => AuthMode::Remote,
+            _ => AuthMode::Local,
+        };
+        let proxy_secret = std::env::var("RUTSUBO_PROXY_SECRET")
+            .ok()
+            .filter(|v| !v.is_empty());
+        if auth_mode == AuthMode::Remote && proxy_secret.is_none() {
+            return Err(ConfigError::MissingProxySecret);
+        }
+        let allowed_emails = std::env::var("RUTSUBO_ALLOWED_EMAILS")
+            .unwrap_or_default()
+            .split(',')
+            .map(|email| email.trim().to_ascii_lowercase())
+            .filter(|email| !email.is_empty())
+            .collect();
 
         Ok(Self {
             data_dir,
@@ -73,6 +103,9 @@ impl DaemonConfig {
             max_iterations,
             spa_origin,
             groq_api_key,
+            auth_mode,
+            proxy_secret,
+            allowed_emails,
         })
     }
 }
