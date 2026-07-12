@@ -30,6 +30,7 @@ async fn spawn_server() -> (App, SocketAddr, tempfile::TempDir) {
         proxy_secret: None,
         allowed_emails: vec![],
         database_url: None,
+        relay_url: None,
     };
     let app = AppState::bootstrap(cfg).await.unwrap();
     let router = rutsubo_daemon::api::router(app.clone());

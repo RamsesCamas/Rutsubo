@@ -33,6 +33,9 @@ async fn main() {
         }
     };
 
+    // Conexión saliente al relay C-2 (no-op si RUTSUBO_RELAY_URL no está).
+    rutsubo_daemon::relay::spawn(app.clone());
+
     let router = api::router(app);
     let listener = match tokio::net::TcpListener::bind(cfg.bind).await {
         Ok(l) => l,

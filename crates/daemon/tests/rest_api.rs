@@ -25,6 +25,7 @@ async fn test_app() -> (App, Router, tempfile::TempDir) {
         proxy_secret: None,
         allowed_emails: vec![],
         database_url: None,
+        relay_url: None,
     };
     let app = AppState::bootstrap(cfg).await.unwrap();
     let router = api::router(app.clone());

@@ -15,6 +15,7 @@ pub mod events;
 pub mod fixtures;
 pub mod ids;
 pub mod paths;
+pub mod relay;
 
 pub use commands::Command;
 pub use envelope::{Envelope, PROTOCOL_VERSION};
@@ -24,4 +25,4 @@ pub use events::Event;
 /// Se incrementa a mano con CUALQUIER cambio observable del contrato (schema,
 /// fixtures o bindings); el CHECKSUM generado y el guard de CI detectan el
 /// cambio sin bump.
-pub const CONTRACT_VERSION: u32 = 1;
+pub const CONTRACT_VERSION: u32 = 2;

@@ -34,6 +34,9 @@ pub struct DaemonConfig {
     pub allowed_emails: Vec<String>,
     /// PostgreSQL administrado para identidad/sesiones del modo remoto.
     pub database_url: Option<String>,
+    /// Base http(s) del relay C-2 (`RUTSUBO_RELAY_URL`). Si está configurada,
+    /// el daemon mantiene la conexión WebSocket saliente de ADR-006.
+    pub relay_url: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -98,6 +101,10 @@ impl DaemonConfig {
         if auth_mode == AuthMode::Remote && database_url.is_none() {
             return Err(ConfigError::MissingDatabaseUrl);
         }
+        let relay_url = std::env::var("RUTSUBO_RELAY_URL")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .map(|v| v.trim_end_matches('/').to_owned());
         let allowed_emails = std::env::var("RUTSUBO_ALLOWED_EMAILS")
             .unwrap_or_default()
             .split(',')
@@ -115,6 +122,7 @@ impl DaemonConfig {
             proxy_secret,
             allowed_emails,
             database_url,
+            relay_url,
         })
     }
 }

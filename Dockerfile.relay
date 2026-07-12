@@ -1,0 +1,21 @@
+FROM rust:1.92-bookworm AS build
+WORKDIR /app
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
+RUN cargo build --release -p rutsubo-relay
+
+FROM debian:bookworm-slim
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --uid 10001 rutsubo \
+    && mkdir /data && chown rutsubo /data
+COPY --from=build /app/target/release/rutsubo-relay /usr/local/bin/rutsubo-relay
+USER rutsubo
+# Dentro del contenedor el bind no-loopback es correcto: el aislamiento lo da
+# la red de docker; compose decide qué puerto publicar (LAN o localhost).
+ENV RELAY_BIND=0.0.0.0:8443
+ENV RELAY_DB=sqlite:///data/relay.db?mode=rwc
+VOLUME /data
+EXPOSE 8443
+ENTRYPOINT ["/usr/local/bin/rutsubo-relay"]

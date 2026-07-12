@@ -7,6 +7,7 @@ pub mod asr;
 pub mod audit;
 pub mod config;
 pub mod health;
+pub mod relay;
 pub mod rules;
 pub mod sessions;
 
@@ -37,6 +38,8 @@ pub fn router(app: App) -> Router {
         .route("/v1/audit", get(audit::query))
         .route("/v1/ws/ticket", post(crate::ws::issue_ticket))
         .route("/v1/asr/transcribe", post(asr::transcribe))
+        .route("/v1/relay/status", get(relay::status))
+        .route("/v1/relay/pair", post(relay::pair))
         .route_layer(middleware::from_fn_with_state(
             app.clone(),
             crate::auth::require_bearer,
@@ -45,6 +48,12 @@ pub fn router(app: App) -> Router {
     let mut allowed_origins: Vec<HeaderValue> = vec![
         HeaderValue::from_static("http://localhost:5173"),
         HeaderValue::from_static("http://127.0.0.1:5173"),
+        // Shell Tauri (ADR-002: misma SPA, origin propio por plataforma).
+        HeaderValue::from_static("tauri://localhost"),
+        HeaderValue::from_static("http://tauri.localhost"),
+        // Flutter web en el puerto fijo de desarrollo (plan C del móvil).
+        HeaderValue::from_static("http://localhost:5180"),
+        HeaderValue::from_static("http://127.0.0.1:5180"),
     ];
     if let Some(origin) = app.cfg.spa_origin.as_deref()
         && let Ok(v) = HeaderValue::from_str(origin)

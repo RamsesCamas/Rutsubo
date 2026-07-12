@@ -62,12 +62,26 @@ pub struct ProviderStatus {
     pub reason: Option<String>,
 }
 
+/// Estado de la conexión saliente al relay C-2 (ADR-006).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct RelayStatus {
+    /// `RUTSUBO_RELAY_URL` está configurada.
+    pub configured: bool,
+    /// La conexión WebSocket saliente está viva.
+    pub connected: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct HealthResponse {
     pub status: String,
     pub version: String,
     pub provider: ProviderStatus,
+    /// Ausente en builds previos al relay; los clientes lo tratan opcional.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub relay: Option<RelayStatus>,
 }
 
 // ---- Sesiones ----

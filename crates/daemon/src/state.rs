@@ -43,6 +43,9 @@ pub struct AppState {
     pub tickets: crate::tickets::TicketStore,
     /// Sesiones con turno agéntico en curso (RF-16: suspensión por sesión).
     pub running: std::sync::Mutex<HashSet<SessionId>>,
+    /// Estado de la conexión saliente al relay C-2 (ADR-006) + despertador
+    /// para reintentar tras el pairing.
+    pub relay: Arc<crate::relay::RelayControl>,
 }
 
 impl AppState {
@@ -119,6 +122,7 @@ impl AppState {
             transcriber,
             tickets: crate::tickets::TicketStore::default(),
             running: std::sync::Mutex::new(HashSet::new()),
+            relay: Arc::new(crate::relay::RelayControl::default()),
         }))
     }
 

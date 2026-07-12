@@ -3,7 +3,8 @@
 use crate::state::App;
 use axum::Json;
 use axum::extract::State;
-use rutsubo_core::api::{HealthResponse, ProviderHealth};
+use rutsubo_core::api::{HealthResponse, ProviderHealth, RelayStatus};
+use std::sync::atomic::Ordering;
 
 pub async fn health(State(app): State<App>) -> Json<HealthResponse> {
     let mut provider = app.llm.status().await;
@@ -20,5 +21,9 @@ pub async fn health(State(app): State<App>) -> Json<HealthResponse> {
         .into(),
         version: env!("CARGO_PKG_VERSION").into(),
         provider,
+        relay: Some(RelayStatus {
+            configured: app.cfg.relay_url.is_some(),
+            connected: app.relay.connected.load(Ordering::Relaxed),
+        }),
     })
 }
