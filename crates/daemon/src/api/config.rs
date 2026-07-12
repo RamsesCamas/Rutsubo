@@ -22,7 +22,7 @@ pub async fn put_model(
     State(app): State<App>,
     ApiJson(req): ApiJson<ModelConfig>,
 ) -> Result<Json<ModelConfig>, ApiError> {
-    if app.cfg.groq_api_key.is_none() {
+    if app.groq_key.read().await.is_none() {
         return Err(ApiError::validation(
             "GROQ_API_KEY no está configurada",
             Some(json!({"field": "GROQ_API_KEY"})),

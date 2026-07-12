@@ -91,13 +91,15 @@ fn read_token(data_dir: &Path) -> Option<String> {
 /// Misma disciplina de permisos que el token local (`auth::write_0600`).
 fn write_0600(path: &Path, contents: &str) -> io::Result<()> {
     use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-    let mut f = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)?;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    // 0600 solo en Unix; en Windows, permisos del usuario (daemon local).
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut f = opts.open(path)?;
     f.write_all(contents.as_bytes())
 }
 

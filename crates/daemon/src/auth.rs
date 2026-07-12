@@ -42,13 +42,16 @@ pub fn load_or_create_token(data_dir: &Path) -> io::Result<String> {
 
 fn write_0600(path: &Path, contents: &str) -> io::Result<()> {
     use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-    let mut f = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)?;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    // 0600 solo aplica en Unix (RNF-04). En Windows el archivo queda con los
+    // permisos del usuario; el daemon es local y mono-usuario en escritorio.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut f = opts.open(path)?;
     f.write_all(contents.as_bytes())
 }
 

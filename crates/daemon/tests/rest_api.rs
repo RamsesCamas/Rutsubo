@@ -726,3 +726,112 @@ async fn recursos_inexistentes_dan_404() {
         assert_eq!(body["error"]["code"], "not_found");
     }
 }
+
+#[tokio::test]
+async fn provider_key_estado_y_reconfiguracion() {
+    let (app, router, _dir) = test_app().await;
+    let token = app.token.clone();
+
+    // Sin key: estado none, health "down".
+    let (status, body) = send(
+        &router,
+        request("GET", "/v1/config/provider", Some(&token), None),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["configured"], false);
+    assert_eq!(body["source"], "none");
+
+    // Key mal formada → 422.
+    let (status, _) = send(
+        &router,
+        request(
+            "PUT",
+            "/v1/config/provider",
+            Some(&token),
+            Some(json!({"groq_api_key": "no-empieza-con-gsk"})),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // Key válida (de forma) → configured, persistida.
+    let (status, body) = send(
+        &router,
+        request(
+            "PUT",
+            "/v1/config/provider",
+            Some(&token),
+            Some(json!({"groq_api_key": "gsk_ejemplo_de_prueba_1234567890"})),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["configured"], true);
+
+    // El estado ahora es stored y health pasa a "ok".
+    let (_, body) = send(
+        &router,
+        request("GET", "/v1/config/provider", Some(&token), None),
+    )
+    .await;
+    assert_eq!(body["source"], "stored");
+    let (_, health) = send(&router, request("GET", "/v1/health", None, None)).await;
+    assert_eq!(health["status"], "ok");
+
+    // Borrar la key (null) → vuelve a none/degradado.
+    let (status, body) = send(
+        &router,
+        request(
+            "PUT",
+            "/v1/config/provider",
+            Some(&token),
+            Some(json!({"groq_api_key": null})),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["configured"], false);
+    let (_, health) = send(&router, request("GET", "/v1/health", None, None)).await;
+    assert_eq!(health["status"], "down");
+}
+
+#[tokio::test]
+async fn fs_list_lista_subdirectorios() {
+    let (app, router, _dir) = test_app().await;
+    let token = app.token.clone();
+
+    let base = tempfile::tempdir().unwrap();
+    std::fs::create_dir(base.path().join("proyecto_a")).unwrap();
+    std::fs::create_dir(base.path().join("proyecto_b")).unwrap();
+    std::fs::write(base.path().join("archivo.txt"), b"x").unwrap();
+    std::fs::create_dir(base.path().join(".oculto")).unwrap();
+
+    let uri = format!("/v1/fs/list?path={}", base.path().to_str().unwrap());
+    let (status, body) = send(&router, request("GET", &uri, Some(&token), None)).await;
+    assert_eq!(status, StatusCode::OK);
+    let names: Vec<&str> = body["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        vec!["proyecto_a", "proyecto_b"],
+        "solo directorios, sin ocultos, ordenados"
+    );
+    assert!(body["parent"].is_string());
+
+    // fs/list exige auth.
+    let (status, _) = send(&router, request("GET", &uri, None, None)).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // Ruta inexistente → 422.
+    let (status, _) = send(
+        &router,
+        request("GET", "/v1/fs/list?path=/no/existe/xyz", Some(&token), None),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}

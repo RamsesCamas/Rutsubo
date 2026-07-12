@@ -6,7 +6,9 @@ pub mod approvals;
 pub mod asr;
 pub mod audit;
 pub mod config;
+pub mod fs;
 pub mod health;
+pub mod provider;
 pub mod relay;
 pub mod rules;
 pub mod sessions;
@@ -35,6 +37,11 @@ pub fn router(app: App) -> Router {
             "/v1/config/model",
             get(config::get_model).put(config::put_model),
         )
+        .route(
+            "/v1/config/provider",
+            get(provider::get_provider).put(provider::put_provider),
+        )
+        .route("/v1/fs/list", get(fs::list))
         .route("/v1/audit", get(audit::query))
         .route("/v1/ws/ticket", post(crate::ws::issue_ticket))
         .route("/v1/asr/transcribe", post(asr::transcribe))

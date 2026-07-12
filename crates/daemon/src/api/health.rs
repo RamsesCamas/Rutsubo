@@ -7,18 +7,15 @@ use rutsubo_core::api::{HealthResponse, ProviderHealth, RelayStatus};
 use std::sync::atomic::Ordering;
 
 pub async fn health(State(app): State<App>) -> Json<HealthResponse> {
-    let mut provider = app.llm.status().await;
-    if app.cfg.groq_api_key.is_none() {
+    let has_key = app.groq_key.read().await.is_some();
+    let llm = app.llm.read().await.clone();
+    let mut provider = llm.status().await;
+    if !has_key {
         provider.health = ProviderHealth::Down;
         provider.reason = Some("missing_api_key".into());
     }
     Json(HealthResponse {
-        status: if app.cfg.groq_api_key.is_some() {
-            "ok"
-        } else {
-            "down"
-        }
-        .into(),
+        status: if has_key { "ok" } else { "down" }.into(),
         version: env!("CARGO_PKG_VERSION").into(),
         provider,
         relay: Some(RelayStatus {

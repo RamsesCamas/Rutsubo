@@ -330,6 +330,52 @@ impl Default for ModelConfig {
     }
 }
 
+// ---- Credencial del proveedor (GET/PUT /v1/config/provider) ----
+
+/// Estado de la API key del proveedor. Nunca expone la key en sí (RNF-07);
+/// solo si hay una configurada y de dónde vino.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ProviderKeyStatus {
+    /// Hay una API key efectiva (la app puede llamar al modelo).
+    pub configured: bool,
+    /// `stored` (persistida desde la UI), `env` (variable de entorno) o `none`.
+    pub source: String,
+}
+
+/// PUT /v1/config/provider: configura o borra la API key de Groq.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SetProviderKeyRequest {
+    /// `null` o vacío borra la key (vuelve a modo degradado / a la del entorno).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub groq_api_key: Option<String>,
+}
+
+// ---- Explorador de directorios (GET /v1/fs/list) ----
+
+/// Una entrada de directorio (solo se listan carpetas: se elige el workspace).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DirEntry {
+    pub name: String,
+    /// Ruta absoluta de la entrada.
+    pub path: String,
+}
+
+/// Listado de un directorio para el selector de carpeta de la UI.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DirListing {
+    /// Ruta absoluta que se listó.
+    pub path: String,
+    /// Directorio padre (`null` en una raíz).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    /// Subdirectorios, ordenados por nombre.
+    pub entries: Vec<DirEntry>,
+}
+
 /// Resultado de la transcripción ASR. El audio nunca se persiste.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]

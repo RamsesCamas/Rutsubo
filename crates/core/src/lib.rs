@@ -25,4 +25,4 @@ pub use events::Event;
 /// Se incrementa a mano con CUALQUIER cambio observable del contrato (schema,
 /// fixtures o bindings); el CHECKSUM generado y el guard de CI detectan el
 /// cambio sin bump.
-pub const CONTRACT_VERSION: u32 = 2;
+pub const CONTRACT_VERSION: u32 = 3;

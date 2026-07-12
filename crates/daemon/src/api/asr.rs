@@ -51,8 +51,8 @@ pub async fn transcribe(
         ));
     }
     let bytes = audio.len();
-    let result = app
-        .transcriber
+    let transcriber = app.transcriber.read().await.clone();
+    let result = transcriber
         .transcribe(audio, &mime, language.as_deref())
         .await
         .map_err(|_| ApiError {

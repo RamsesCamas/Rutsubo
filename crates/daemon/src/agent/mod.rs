@@ -59,7 +59,10 @@ async fn run_turn(app: &App, session_id: SessionId) -> Result<(), Box<dyn std::e
             cancel: cancel.clone(),
         };
 
-        let outcome = match app.llm.generate_with_info(request).await {
+        // Clon del Arc del adapter vigente: si la key se reconfigura a mitad de
+        // sesión, esta llamada usa el adapter que estaba activo al empezar.
+        let llm = app.llm.read().await.clone();
+        let outcome = match llm.generate_with_info(request).await {
             Ok(outcome) => outcome,
             Err(err) => {
                 finish_with_error(app, session_id, &err).await?;
