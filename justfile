@@ -1,5 +1,9 @@
 # Tareas de desarrollo de Rutsubo (backend)
 
+# Pull + push (hábito de apertura/cierre multi-máquina, plan general §1)
+sync:
+    git pull --rebase && git push
+
 # Arranca el daemon en 127.0.0.1:7431
 dev:
     cargo run -p rutsubo-daemon
