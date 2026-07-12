@@ -40,8 +40,10 @@ lint:
     cargo fmt --all --check
     cargo clippy --workspace --all-targets -- -D warnings
 
-# Gate local equivalente a CI
+# Gate local equivalente a CI. El patrón exige la forma de un token Groq real
+# (prefijo + ≥40 base62) para no auto-detectarse: el literal de esta misma
+# receta (`gsk_[…`) no cumple el patrón, así que no cuenta como filtración.
 check-secrets:
-    ! git log -p --all | rg -q 'gsk_'
+    ! git log -p --all | rg -q 'gsk_[A-Za-z0-9]{40}'
 
 ci: lint test bindings contract-export check-secrets
