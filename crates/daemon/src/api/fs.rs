@@ -53,21 +53,25 @@ pub async fn list(
         }
         entries.push(DirEntry {
             name,
-            path: entry.path().to_string_lossy().into_owned(),
+            path: clean_path(&entry.path()),
         });
     }
     entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
-    let parent = dir
-        .parent()
-        .map(|p| p.to_string_lossy().into_owned())
-        .filter(|p| !p.is_empty());
+    let parent = dir.parent().map(clean_path).filter(|p| !p.is_empty());
 
     Ok(Json(DirListing {
-        path: dir.to_string_lossy().into_owned(),
+        path: clean_path(&dir),
         parent,
         entries,
     }))
+}
+
+/// Ruta legible para la UI: quita el prefijo `\\?\` que `canonicalize` añade en
+/// Windows (paths de longitud extendida). En Unix es idéntica.
+fn clean_path(p: &Path) -> String {
+    let s = p.to_string_lossy();
+    s.strip_prefix(r"\\?\").unwrap_or(&s).to_string()
 }
 
 fn home_dir() -> PathBuf {
