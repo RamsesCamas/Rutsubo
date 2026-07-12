@@ -56,7 +56,7 @@ pub async fn list(
             path: clean_path(&entry.path()),
         });
     }
-    entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    entries.sort_by_key(|e| e.name.to_lowercase());
 
     let parent = dir.parent().map(clean_path).filter(|p| !p.is_empty());
 
