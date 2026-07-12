@@ -18,6 +18,7 @@
 
 use crate::ids::SessionId;
 use chrono::{DateTime, Utc};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use ts_rs::TS;
 
@@ -26,8 +27,9 @@ use ts_rs::TS;
 pub const PROTOCOL_VERSION: u16 = 1;
 
 /// Sobre v1. `T` es `Event` (daemon → clientes) o `Command` (clientes → daemon).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, JsonSchema)]
 #[ts(export, concrete(T = crate::events::Event), rename = "EventEnvelope")]
+#[schemars(rename = "EventEnvelope")]
 pub struct Envelope<T> {
     pub v: u16,
     #[serde(flatten)]

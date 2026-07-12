@@ -14,6 +14,18 @@ bindings:
     cargo test -p rutsubo-core export_bindings
     git diff --exit-code -- crates/core/bindings
 
+# Materializa contract-export/ (VERSION, schema, fixtures, bindings-ts, CHECKSUM),
+# el contrato que los repos de app vendorizan con `just sync-contract`.
+# Falla si queda drift sin commitear; el guard de VERSION vive en CI.
+contract-export:
+    cargo test -p rutsubo-core export_bindings
+    cargo test -p rutsubo-core --test contract_export
+    git diff --exit-code -- contract-export
+
+# Arranca el relay C-2 en 127.0.0.1:8443
+relay:
+    cargo run -p rutsubo-relay
+
 # Regenera la caché offline de sqlx (tras cambiar consultas o migraciones).
 # Requiere sqlx-cli 0.8: cargo install sqlx-cli --version "^0.8" \
 #   --no-default-features --features rustls,sqlite
@@ -32,4 +44,4 @@ lint:
 check-secrets:
     ! git log -p --all | rg -q 'gsk_'
 
-ci: lint test bindings check-secrets
+ci: lint test bindings contract-export check-secrets

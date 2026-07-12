@@ -1,0 +1,50 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  # Los tests del daemon compilan consultas sqlx contra la caché offline.
+  SQLX_OFFLINE: "true"
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Historial completo: check-secrets recorre git log y el guard de
+          # VERSION compara contra origin/main.
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: extractions/setup-just@v2
+
+      - name: Dependencias del gate
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - name: Gate completo (lint, tests, bindings, contract-export, secretos)
+        run: just ci
+
+      - name: Guard de VERSION del contrato
+        # El contrato no puede cambiar sin bump de CONTRACT_VERSION: si el
+        # CHECKSUM difiere de origin/main pero VERSION es igual, se olvidó el bump.
+        run: |
+          git fetch origin main --quiet || true
+          if git show origin/main:contract-export/CHECKSUM >/dev/null 2>&1; then
+            old_sum=$(git show origin/main:contract-export/CHECKSUM)
+            old_ver=$(git show origin/main:contract-export/VERSION)
+            new_sum=$(cat contract-export/CHECKSUM)
+            new_ver=$(cat contract-export/VERSION)
+            if [ "$old_sum" != "$new_sum" ] && [ "$old_ver" = "$new_ver" ]; then
+              echo "::error::El contrato cambió (CHECKSUM difiere de origin/main) sin bump de CONTRACT_VERSION"
+              exit 1
+            fi
+          fi

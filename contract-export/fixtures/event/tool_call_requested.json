@@ -1,0 +1,14 @@
+{
+  "payload": {
+    "args": {
+      "path": "src/ctrl.rs"
+    },
+    "tool": "read_file",
+    "tool_call_id": "01J1ZJ9M0000000000000000BB"
+  },
+  "seq": 418,
+  "session_id": "01J1ZG7QXW8Y2K3M4N5P6Q7R8S",
+  "ts": "2026-07-06T18:03:52Z",
+  "type": "tool_call_requested",
+  "v": 1
+}

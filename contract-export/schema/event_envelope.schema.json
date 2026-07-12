@@ -1,0 +1,496 @@
+{
+  "$defs": {
+    "ApprovalId": {
+      "description": "Identificador de una solicitud de aprobación (RF-14).",
+      "type": "string"
+    },
+    "Decision": {
+      "description": "Decisión sobre una aprobación (C-1).",
+      "enum": [
+        "approve",
+        "reject"
+      ],
+      "type": "string"
+    },
+    "FallbackTrigger": {
+      "description": "Disparador de un cambio de proveedor (C-3 `model_provider_changed`, C-4 tabla 6).",
+      "enum": [
+        "oom",
+        "rate_limited",
+        "ttft_exceeded",
+        "failures",
+        "manual"
+      ],
+      "type": "string"
+    },
+    "MessageId": {
+      "description": "Identificador de un mensaje (usuario o asistente).",
+      "type": "string"
+    },
+    "ProviderId": {
+      "description": "Identificador estable de un proveedor de modelo para el audit log (RF-22).\nNo es un ULID: es un nombre jerárquico legible, p. ej. `local:vllm:qwen3.5-8b`.",
+      "type": "string"
+    },
+    "SessionId": {
+      "description": "Identificador de una sesión de conversación (RF-01).",
+      "type": "string"
+    },
+    "SessionState": {
+      "description": "Estado de una sesión (C-1 / C-3).",
+      "enum": [
+        "idle",
+        "running",
+        "waiting_approval",
+        "archived"
+      ],
+      "type": "string"
+    },
+    "StopReason": {
+      "description": "Motivo de cierre de un mensaje del modelo (C-4 `StreamItem::Done`).",
+      "enum": [
+        "end_turn",
+        "max_tokens",
+        "max_iterations",
+        "cancelled",
+        "error"
+      ],
+      "type": "string"
+    },
+    "ToolCallId": {
+      "description": "Identificador de una invocación de herramienta.",
+      "type": "string"
+    },
+    "Usage": {
+      "description": "Conteo de tokens de una generación (RF-22, RF-31).",
+      "properties": {
+        "completion_tokens": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "prompt_tokens": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "prompt_tokens",
+        "completion_tokens"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Sobre v1. `T` es `Event` (daemon → clientes) o `Command` (clientes → daemon).",
+  "oneOf": [
+    {
+      "description": "Cambio de estado de la sesión.",
+      "properties": {
+        "payload": {
+          "properties": {
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "state": {
+              "$ref": "#/$defs/SessionState"
+            },
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "state"
+          ],
+          "type": "object"
+        },
+        "type": {
+          "const": "session_state",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "Fragmento de streaming del modelo (RF-03). Alta frecuencia; los\nclientes concatenan por `message_id`.",
+      "properties": {
+        "payload": {
+          "properties": {
+            "delta": {
+              "type": "string"
+            },
+            "message_id": {
+              "$ref": "#/$defs/MessageId"
+            }
+          },
+          "required": [
+            "message_id",
+            "delta"
+          ],
+          "type": "object"
+        },
+        "type": {
+          "const": "message_delta",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "Cierre de un mensaje del modelo.",
+      "properties": {
+        "payload": {
+          "properties": {
+            "message_id": {
+              "$ref": "#/$defs/MessageId"
+            },
+            "stop_reason": {
+              "$ref": "#/$defs/StopReason"
+            },
+            "usage": {
+              "$ref": "#/$defs/Usage"
+            }
+          },
+          "required": [
+            "message_id",
+            "stop_reason",
+            "usage"
+          ],
+          "type": "object"
+        },
+        "type": {
+          "const": "message_completed",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "El modelo pidió una herramienta. Informativo (la compuerta decide si\nrequiere aprobación).",
+      "properties": {
+        "payload": {
+          "properties": {
+            "args": true,
+            "tool": {
+              "type": "string"
+            },
+            "tool_call_id": {
+              "$ref": "#/$defs/ToolCallId"
+            }
+          },
+          "required": [
+            "tool_call_id",
+            "tool",
+            "args"
+          ],
+          "type": "object"
+        },
+        "type": {
+          "const": "tool_call_requested",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "La compuerta exige decisión humana (RF-15). Difundido a todos los clientes.",
+      "properties": {
+        "payload": {
+          "properties": {
+            "approval_id": {
+              "$ref": "#/$defs/ApprovalId"
+            },
+            "args": true,
+            "expires_at": {
+              "format": "date-time",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "summary": {
+              "type": "string"
+            },
+            "tool": {
+              "type": "string"
+            },
+            "tool_call_id": {
+              "$ref": "#/$defs/ToolCallId"
+            }
+          },
+          "required": [
+            "approval_id",
+            "tool_call_id",
+            "tool",
+            "summary",
+            "args"
+          ],
+          "type": "object"
+        },
+        "type": {
+          "const": "approval_request",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "Decisión tomada (RF-17). Los clientes retiran la tarjeta aunque no\nhayan decidido ellos.",
+      "properties": {
+        "payload": {
+          "properties": {
+            "approval_id": {
+              "$ref": "#/$defs/ApprovalId"
+            },
+            "decision": {
+              "$ref": "#/$defs/Decision"
+            },
+            "resolved_by": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "approval_id",
+            "decision",
+            "resolved_by"
+          ],
+          "type": "object"
+        },
+        "type": {
+          "const": "approval_resolved",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "Resultado de ejecución de una herramienta.",
+      "properties": {
+        "payload": {
+          "properties": {
+            "ok": {
+              "type": "boolean"
+            },
+            "output_excerpt": {
+              "type": "string"
+            },
+            "tool_call_id": {
+              "$ref": "#/$defs/ToolCallId"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "tool_call_id",
+            "ok",
+            "output_excerpt",
+            "truncated"
+          ],
+          "type": "object"
+        },
+        "type": {
+          "const": "tool_result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "Cambio a archivo (RF-27).",
+      "properties": {
+        "payload": {
+          "properties": {
+            "additions": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "deletions": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "diff_unified": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "tool_call_id": {
+              "$ref": "#/$defs/ToolCallId"
+            }
+          },
+          "required": [
+            "tool_call_id",
+            "path",
+            "diff_unified",
+            "additions",
+            "deletions"
+          ],
+          "type": "object"
+        },
+        "type": {
+          "const": "file_diff",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "El adapter cambió de proveedor (ADR-008).",
+      "properties": {
+        "payload": {
+          "properties": {
+            "from": {
+              "$ref": "#/$defs/ProviderId"
+            },
+            "to": {
+              "$ref": "#/$defs/ProviderId"
+            },
+            "trigger": {
+              "$ref": "#/$defs/FallbackTrigger"
+            }
+          },
+          "required": [
+            "from",
+            "to",
+            "trigger"
+          ],
+          "type": "object"
+        },
+        "type": {
+          "const": "model_provider_changed",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "Emitido por el relay cuando no hay daemon conectado (RNF-12).\nGlobal: viaja con `session_id = null`. En la fase local solo existe el tipo.",
+      "properties": {
+        "type": {
+          "const": "daemon_unavailable",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "Error asociado a la sesión. `fatal = true` implica transición a `idle`.",
+      "properties": {
+        "payload": {
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "fatal": {
+              "type": "boolean"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "fatal"
+          ],
+          "type": "object"
+        },
+        "type": {
+          "const": "error",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    }
+  ],
+  "properties": {
+    "seq": {
+      "description": "`Some` en eventos; `None` (omitido) en comandos.",
+      "format": "uint64",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "session_id": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SessionId"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "`null` en eventos globales (p. ej. `daemon_unavailable`)."
+    },
+    "ts": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "v": {
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "v",
+    "ts"
+  ],
+  "title": "EventEnvelope",
+  "type": "object"
+}

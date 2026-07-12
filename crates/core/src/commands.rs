@@ -9,12 +9,13 @@
 use crate::events::Decision;
 use crate::ids::{ApprovalId, SessionId};
 use chrono::{DateTime, Utc};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 /// Comandos v1 (contrato C-3). La sesión objetivo de `send_message` viaja en
 /// `session_id` del sobre.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, JsonSchema)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 #[ts(export)]
 pub enum Command {
@@ -48,7 +49,7 @@ pub enum Command {
 /// [`crate::Envelope`] instanciada con [`Command`]; existe como struct propio
 /// porque `ts-rs` solo permite fijar una instanciación concreta por genérico
 /// (la otra es `EventEnvelope`). Sin `seq`: lo asigna el daemon al efecto.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, JsonSchema)]
 #[ts(export)]
 pub struct CommandEnvelope {
     pub v: u16,

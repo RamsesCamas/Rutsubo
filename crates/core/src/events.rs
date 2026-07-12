@@ -8,11 +8,12 @@
 
 use crate::ids::{ApprovalId, MessageId, ProviderId, ToolCallId};
 use chrono::{DateTime, Utc};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 /// Estado de una sesión (C-1 / C-3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum SessionState {
@@ -23,7 +24,7 @@ pub enum SessionState {
 }
 
 /// Decisión sobre una aprobación (C-1).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum Decision {
@@ -32,7 +33,7 @@ pub enum Decision {
 }
 
 /// Motivo de cierre de un mensaje del modelo (C-4 `StreamItem::Done`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum StopReason {
@@ -44,7 +45,7 @@ pub enum StopReason {
 }
 
 /// Conteo de tokens de una generación (RF-22, RF-31).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
 #[ts(export)]
 pub struct Usage {
     pub prompt_tokens: u32,
@@ -52,7 +53,7 @@ pub struct Usage {
 }
 
 /// Disparador de un cambio de proveedor (C-3 `model_provider_changed`, C-4 tabla 6).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum FallbackTrigger {
@@ -64,7 +65,7 @@ pub enum FallbackTrigger {
 }
 
 /// Catálogo de eventos v1 (contrato C-3, tabla 5). Un variante por fila.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, JsonSchema)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 #[ts(export)]
 pub enum Event {

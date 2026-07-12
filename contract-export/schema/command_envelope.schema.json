@@ -1,0 +1,179 @@
+{
+  "$defs": {
+    "ApprovalId": {
+      "description": "Identificador de una solicitud de aprobación (RF-14).",
+      "type": "string"
+    },
+    "Decision": {
+      "description": "Decisión sobre una aprobación (C-1).",
+      "enum": [
+        "approve",
+        "reject"
+      ],
+      "type": "string"
+    },
+    "SessionId": {
+      "description": "Identificador de una sesión de conversación (RF-01).",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Sobre v1 en dirección cliente → daemon. Es la misma forma que\n[`crate::Envelope`] instanciada con [`Command`]; existe como struct propio\nporque `ts-rs` solo permite fijar una instanciación concreta por genérico\n(la otra es `EventEnvelope`). Sin `seq`: lo asigna el daemon al efecto.",
+  "oneOf": [
+    {
+      "description": "Enviar mensaje e iniciar iteración del loop (equivalente REST:\n`POST /v1/sessions/{id}/messages`).",
+      "properties": {
+        "payload": {
+          "properties": {
+            "client_msg_id": {
+              "type": "string"
+            },
+            "content": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "content",
+            "client_msg_id"
+          ],
+          "type": "object"
+        },
+        "type": {
+          "const": "send_message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "Aprobar o rechazar una solicitud (equivalente REST:\n`POST /v1/approvals/{id}/decision`).",
+      "properties": {
+        "payload": {
+          "properties": {
+            "approval_id": {
+              "$ref": "#/$defs/ApprovalId"
+            },
+            "decision": {
+              "$ref": "#/$defs/Decision"
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "remember_rule": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "approval_id",
+            "decision"
+          ],
+          "type": "object"
+        },
+        "type": {
+          "const": "resolve_approval",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "Suscribirse al flujo vivo de una sesión, con replay desde `after_seq`.",
+      "properties": {
+        "payload": {
+          "properties": {
+            "after_seq": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "session_id": {
+              "$ref": "#/$defs/SessionId"
+            }
+          },
+          "required": [
+            "session_id",
+            "after_seq"
+          ],
+          "type": "object"
+        },
+        "type": {
+          "const": "subscribe_session",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "Dejar de recibir eventos de una sesión.",
+      "properties": {
+        "payload": {
+          "properties": {
+            "session_id": {
+              "$ref": "#/$defs/SessionId"
+            }
+          },
+          "required": [
+            "session_id"
+          ],
+          "type": "object"
+        },
+        "type": {
+          "const": "unsubscribe_session",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    }
+  ],
+  "properties": {
+    "session_id": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SessionId"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Sesión objetivo (`send_message`); `null` en comandos globales."
+    },
+    "ts": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "v": {
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "v",
+    "ts"
+  ],
+  "title": "CommandEnvelope",
+  "type": "object"
+}

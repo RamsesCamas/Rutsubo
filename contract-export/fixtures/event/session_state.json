@@ -1,0 +1,11 @@
+{
+  "payload": {
+    "reason": "aprobación pendiente",
+    "state": "waiting_approval"
+  },
+  "seq": 422,
+  "session_id": "01J1ZG7QXW8Y2K3M4N5P6Q7R8S",
+  "ts": "2026-07-06T18:03:52Z",
+  "type": "session_state",
+  "v": 1
+}

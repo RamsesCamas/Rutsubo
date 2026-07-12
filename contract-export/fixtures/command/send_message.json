@@ -1,0 +1,10 @@
+{
+  "payload": {
+    "client_msg_id": "a3f0c2d4-0000-4000-8000-000000000001",
+    "content": "Extrae la lógica de validación a un módulo separado"
+  },
+  "session_id": "01J1ZG7QXW8Y2K3M4N5P6Q7R8S",
+  "ts": "2026-07-06T18:03:52Z",
+  "type": "send_message",
+  "v": 1
+}

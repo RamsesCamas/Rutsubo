@@ -1,0 +1,17 @@
+{
+  "payload": {
+    "approval_id": "01J1ZJ9M0000000000000000CC",
+    "args": {
+      "path": "src/x.rs"
+    },
+    "expires_at": "2026-07-06T18:07:00Z",
+    "summary": "escribir src/x.rs",
+    "tool": "write_file",
+    "tool_call_id": "01J1ZJ9M0000000000000000BB"
+  },
+  "seq": 500,
+  "session_id": "01J1ZG7QXW8Y2K3M4N5P6Q7R8S",
+  "ts": "2026-07-06T18:03:52Z",
+  "type": "approval_request",
+  "v": 1
+}

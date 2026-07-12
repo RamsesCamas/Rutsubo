@@ -12,9 +12,14 @@ macro_rules! ulid_id {
         $(#[$doc])*
         #[derive(
             Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, TS,
+            schemars::JsonSchema,
         )]
         #[ts(export)]
-        pub struct $name(#[ts(type = "string")] pub Ulid);
+        pub struct $name(
+            #[ts(type = "string")]
+            #[schemars(with = "String")]
+            pub Ulid,
+        );
 
         impl $name {
             #[allow(clippy::new_without_default)]
@@ -65,7 +70,7 @@ ulid_id!(
 
 /// Identificador estable de un proveedor de modelo para el audit log (RF-22).
 /// No es un ULID: es un nombre jerárquico legible, p. ej. `local:vllm:qwen3.5-8b`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct ProviderId(pub String);
 

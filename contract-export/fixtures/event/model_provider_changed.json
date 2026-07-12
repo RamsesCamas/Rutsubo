@@ -1,0 +1,12 @@
+{
+  "payload": {
+    "from": "local:vllm:qwen3.5-8b",
+    "to": "external:anthropic:claude-sonnet-4-6",
+    "trigger": "ttft_exceeded"
+  },
+  "seq": 430,
+  "session_id": "01J1ZG7QXW8Y2K3M4N5P6Q7R8S",
+  "ts": "2026-07-06T18:03:52Z",
+  "type": "model_provider_changed",
+  "v": 1
+}
