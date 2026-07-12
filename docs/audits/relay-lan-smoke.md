@@ -5,8 +5,9 @@ despliegue: primero localhost con `cargo run`, luego LAN para el iPhone físico,
 y por último la variante docker. El objetivo de la fase es dejar el despliegue
 reducido a un `railway up`.
 
-Estado: **verificado en localhost con `cargo run`** (2026-07-11). Las variantes
-docker y LAN física quedan como pasos operativos del autor (ver notas).
+Estado: **verificado en localhost con `cargo run` y en docker compose**
+(2026-07-11). La variante LAN física (iPhone) queda como paso operativo del
+autor en el MacBook (ver notas).
 
 ---
 
@@ -92,18 +93,18 @@ código de transporte, solo cambia la URL.
 
 ---
 
-## 3. Variante docker (pendiente de docker en Gidorah)
+## 3. Variante docker (verificada)
 
 ```bash
 docker compose up -d relay          # publica 8443, volumen sqlite persistente
-curl -s localhost:8443/v1/health    # {"status":"ok",...}
+curl -s localhost:8443/v1/health    # {"status":"ok","version":"0.1.0"}
 ```
 
-Repetir el pairing de la sección 1 apuntando a `localhost:8443`. En Gidorah la
-integración de Docker Desktop con WSL debe estar activada
-(Settings → Resources → WSL Integration); en el Mac, Docker Desktop nativo.
+Verificado (2026-07-11): la imagen `rutsubo-relay` construye con
+`docker compose build relay`; con el contenedor arriba, el pairing de la
+sección 1 apuntando a `localhost:8443` completa y `health.relay.connected` pasa
+a `true` (daemon del host ↔ relay en contenedor). El volumen `relay-data`
+persiste cuentas/dispositivos entre reinicios.
 
-Estado: **pendiente** — el `docker` de esta máquina aún no está disponible; el
-`Dockerfile.relay` y el `docker-compose.yml` están listos y probados por
-inspección. Al activarlo, este es el único paso que falta para que el despliegue
-quede a `railway up`.
+Con esto, **el despliegue queda reducido a `railway up`**: mismo binario, misma
+imagen; solo cambia dónde corre y que Railway termina TLS (`wss://`).
