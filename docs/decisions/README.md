@@ -14,10 +14,13 @@ Diseño* (RF-01…RF-31, RNF-01…RNF-18) y *ADRs y Contratos de Servicio*
 | ADR-004 (contrato único en `core` + ts-rs) | `crates/core` + `bindings/` generados (`just bindings`) |
 | ADR-005 (SQLite embebido, WAL) | `store/` + `migrations/`; consultas verificadas en compilación (caché `.sqlx/`) |
 | ADR-008 (adapter remoto Groq con fallback) | `llm/fallback.rs` y `llm/groq.rs` |
+| ADR-006 (relay pub/sub) | `crates/relay` — `hub.rs`, `ws.rs` |
+| [ADR-009](ADR-009-buzon-offline.md) (buzón offline + Google Sign-In, C-2) | `crates/relay` (`google.rs`, `outbox.rs`), `crates/daemon` (`relay.rs`, `store/acks.rs`), contrato C-4 |
 
-ADR-002/006/007 (superficies, relay, móvil) aplican a otros repos/fases; el
-bus de eventos interno (`state.rs`) es el punto donde el relay de C-2 se
-colgará en la fase siguiente.
+ADR-002/007 (superficies web/móvil) aplican a los repos hermanos. El bus de
+eventos interno (`state.rs`) es donde el relay C-2 se cuelga: el daemon
+difunde sus eventos de sesión al relay cuando está pareado (M1) y drena el
+buzón al conectar (M2, ver [ADR-009](ADR-009-buzon-offline.md)).
 
 ## Resoluciones tomadas durante la implementación
 
