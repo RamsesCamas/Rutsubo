@@ -31,6 +31,24 @@ async fn next_text(socket: &mut Ws) -> Option<String> {
     }
 }
 
+/// Igual que `next_text` pero omite los frames de presencia
+/// (`daemon_unavailable`) que el relay empuja al conectar sin daemon o al caerse
+/// el daemon. Los tests de enrutamiento asertan sobre los frames enrutados, no
+/// sobre la presencia (que carrera con el registro del daemon).
+async fn next_routed(socket: &mut Ws) -> Option<String> {
+    loop {
+        let text = next_text(socket).await?;
+        let is_presence = serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .and_then(|v| v.get("type").and_then(|t| t.as_str().map(str::to_owned)))
+            .as_deref()
+            == Some("daemon_unavailable");
+        if !is_presence {
+            return Some(text);
+        }
+    }
+}
+
 /// Verifica que NO llega ningún frame de texto en un lapso corto.
 async fn assert_silence(socket: &mut Ws) {
     let result = tokio::time::timeout(Duration::from_millis(300), async {
@@ -70,8 +88,8 @@ async fn broadcast_unicast_y_comandos() {
         ))
         .await
         .unwrap();
-    assert_eq!(next_text(&mut sub1).await.as_deref(), Some(evento));
-    assert_eq!(next_text(&mut sub2).await.as_deref(), Some(evento));
+    assert_eq!(next_routed(&mut sub1).await.as_deref(), Some(evento));
+    assert_eq!(next_routed(&mut sub2).await.as_deref(), Some(evento));
 
     // dst: device → unicast (backlog de subscribe_session).
     let backlog = r#"{"v":1,"type":"session_state","seq":2}"#;
@@ -81,7 +99,7 @@ async fn broadcast_unicast_y_comandos() {
         ))
         .await
         .unwrap();
-    assert_eq!(next_text(&mut sub1).await.as_deref(), Some(backlog));
+    assert_eq!(next_routed(&mut sub1).await.as_deref(), Some(backlog));
     assert_silence(&mut sub2).await;
 
     // Comando del cliente → daemon envuelto en ToDaemon{src}.
@@ -97,13 +115,17 @@ async fn broadcast_unicast_y_comandos() {
     let (tok_b, _) = common::login(&relay, "eva@example.com").await;
     let _ = token_b;
     let mut sub_extranjero = ws(&format!("{}/v1/subscribe?token={tok_b}", relay.ws_base)).await;
+    // La cuenta B no tiene daemon: su suscriptor recibe el frame de presencia
+    // inicial `daemon_unavailable`. Se consume antes de asertar el aislamiento.
+    let presencia = next_text(&mut sub_extranjero).await.expect("presencia B");
+    assert!(presencia.contains("daemon_unavailable"), "presencia: {presencia}");
     daemon
         .send(Message::text(
             serde_json::json!({"frame": "solo-cuenta-a"}).to_string(),
         ))
         .await
         .unwrap();
-    assert_eq!(next_text(&mut sub1).await.as_deref(), Some("solo-cuenta-a"));
+    assert_eq!(next_routed(&mut sub1).await.as_deref(), Some("solo-cuenta-a"));
     assert_silence(&mut sub_extranjero).await;
 }
 
@@ -123,6 +145,50 @@ async fn daemon_unavailable_sin_daemon_conectado() {
     assert_eq!(evento["type"], "daemon_unavailable");
     assert_eq!(evento["session_id"], serde_json::Value::Null);
     assert!(evento.get("seq").is_none(), "no persistido: sin seq");
+}
+
+#[tokio::test]
+async fn presencia_al_conectar_sin_daemon() {
+    // Un suscriptor que entra sin daemon conectado recibe `daemon_unavailable`
+    // de inmediato, sin mandar ningún comando: así el indicador queda honesto
+    // ("escritorio offline") y el compositor pasa a "Encolar".
+    let relay = spawn().await;
+    let (token, _) = register_and_login(&relay, "ana@example.com").await;
+    let (tok1, _) = common::login(&relay, "ana@example.com").await;
+    let _ = token;
+
+    let mut sub = ws(&format!("{}/v1/subscribe?token={tok1}", relay.ws_base)).await;
+    let text = next_text(&mut sub).await.expect("presencia inicial");
+    let ev: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(ev["type"], "daemon_unavailable");
+    assert_eq!(ev["session_id"], serde_json::Value::Null);
+}
+
+#[tokio::test]
+async fn presencia_por_difusion_cuando_el_daemon_se_cae() {
+    // Con el daemon en línea el suscriptor no está "offline"; cuando el daemon
+    // se desconecta, el relay difunde `daemon_unavailable` para que el móvil
+    // vuelva a "Encolar" sin tener que reintentar un comando.
+    let relay = spawn().await;
+    let (token, _) = register_and_login(&relay, "ana@example.com").await;
+    let (daemon_token, _) = pair_daemon(&relay, &token).await;
+    let (tok1, _) = common::login(&relay, "ana@example.com").await;
+
+    let mut daemon = ws(&format!("{}/v1/connect?token={daemon_token}", relay.ws_base)).await;
+    let mut sub = ws(&format!("{}/v1/subscribe?token={tok1}", relay.ws_base)).await;
+
+    // Sincronizar: un evento enrutado confirma que ambos están registrados y
+    // consume cualquier presencia inicial (carrera de registro).
+    daemon
+        .send(Message::text(serde_json::json!({"frame": "ping"}).to_string()))
+        .await
+        .unwrap();
+    assert_eq!(next_routed(&mut sub).await.as_deref(), Some("ping"));
+
+    // El daemon se cae → el suscriptor recibe la presencia por difusión.
+    drop(daemon);
+    let text = next_text(&mut sub).await.expect("presencia por caída");
+    assert!(text.contains("daemon_unavailable"), "presencia: {text}");
 }
 
 #[tokio::test]

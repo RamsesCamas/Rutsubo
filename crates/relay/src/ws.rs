@@ -127,6 +127,14 @@ async fn daemon_connection(state: RelayState, device: AuthedDevice, socket: WebS
 
     state.hub.unregister_daemon(&device.account_id, &conn_id);
     tracing::info!(account = %device.account_id, "daemon desconectado");
+    // Si tras la baja ya no queda daemon para la cuenta, avisar a los
+    // suscriptores que el escritorio quedó offline. Una supersede no dispara
+    // esto: el sucesor sigue registrado, así que `daemon_tx` es `Some`.
+    if state.hub.daemon_tx(&device.account_id).is_none() {
+        state
+            .hub
+            .broadcast(&device.account_id, &daemon_unavailable_frame());
+    }
 }
 
 /// Enruta un sobre `FromDaemon`: broadcast a la cuenta o unicast al device.
@@ -172,8 +180,15 @@ async fn subscriber_connection(state: RelayState, device: AuthedDevice, socket: 
     let (tx, mut rx) = mpsc::channel::<Message>(OUTBOX_CAPACITY);
     state
         .hub
-        .register_subscriber(&device.account_id, &conn_id, &device.device_id, tx);
+        .register_subscriber(&device.account_id, &conn_id, &device.device_id, tx.clone());
     tracing::info!(account = %device.account_id, device = %device.device_id, "suscriptor conectado");
+
+    // Presencia honesta: si no hay daemon conectado, decírselo ya (si no, el
+    // cliente no lo sabría hasta enviar un comando y recibir el rechazo). El
+    // indicador pasa a "escritorio offline" y el compositor a "Encolar".
+    if state.hub.daemon_tx(&device.account_id).is_none() {
+        let _ = tx.try_send(Message::Text(Utf8Bytes::from(daemon_unavailable_frame())));
+    }
 
     let (mut sink, mut incoming) = socket.split();
     let mut ping = tokio::time::interval(PING_INTERVAL);
@@ -255,12 +270,20 @@ async fn forward_to_daemon(
             return Ok(());
         }
     }
-    let unavailable = serde_json::json!({
+    sink.send(Message::Text(Utf8Bytes::from(daemon_unavailable_frame())))
+        .await
+}
+
+/// Frame C-3 `daemon_unavailable`: el relay está vivo pero no hay daemon
+/// conectado para la cuenta. Sirve tanto de respuesta a un comando descartado
+/// (RNF-12) como de señal de presencia (al suscribir sin daemon, y por difusión
+/// cuando el daemon se desconecta). `session_id: null` → evento global.
+fn daemon_unavailable_frame() -> String {
+    serde_json::json!({
         "v": 1,
         "type": "daemon_unavailable",
         "session_id": null,
         "ts": Utc::now(),
-    });
-    sink.send(Message::Text(Utf8Bytes::from(unavailable.to_string())))
-        .await
+    })
+    .to_string()
 }
