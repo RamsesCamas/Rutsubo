@@ -34,7 +34,10 @@ struct RawClaims {
 /// Real (JWKS de Google) o Dev (token sintético en desarrollo).
 pub enum Verifier {
     Real(RealVerifier),
-    Dev,
+    /// Dev es un HÍBRIDO: acepta `dev:{sub}:{email}` y, si hay client IDs
+    /// configurados, también id_tokens reales de Google — así se prueba el
+    /// login real en local sin cortar las sesiones dev existentes.
+    Dev(RealVerifier),
 }
 
 impl Verifier {
@@ -42,7 +45,7 @@ impl Verifier {
     pub fn from_config(dev: bool) -> Self {
         if dev {
             tracing::warn!("relay en modo GOOGLE_DEV: acepta id_tokens de prueba, NO usar en red pública");
-            Verifier::Dev
+            Verifier::Dev(RealVerifier::new())
         } else {
             Verifier::Real(RealVerifier::new())
         }
@@ -54,7 +57,15 @@ impl Verifier {
         client_ids: &[String],
     ) -> Result<GoogleClaims, RelayError> {
         match self {
-            Verifier::Dev => verify_dev(id_token),
+            Verifier::Dev(real) => {
+                if id_token.starts_with("dev:") {
+                    verify_dev(id_token)
+                } else if !client_ids.is_empty() {
+                    real.verify(id_token, client_ids).await
+                } else {
+                    Err(RelayError::unauthorized())
+                }
+            }
             Verifier::Real(v) => v.verify(id_token, client_ids).await,
         }
     }
