@@ -282,6 +282,14 @@ async fn session(app: &App, socket: Socket) -> SessionEnd {
                     }
                 }
             }
+            // Un nuevo pairing escribió otro token (posiblemente OTRA cuenta):
+            // cortar esta sesión y reconectar con el token fresco. Sin esto,
+            // re-vincular con la app abierta dejaba al daemon en la cuenta
+            // vieja mientras el token nuevo dormía en disco.
+            _ = app.relay.wake.notified() => {
+                tracing::info!("nuevo pairing: reconectando al relay con el token nuevo");
+                return SessionEnd::Retry;
+            }
         }
     }
 }
