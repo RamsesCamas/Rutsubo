@@ -21,7 +21,7 @@ use chrono::Utc;
 use ed25519_dalek::{Signer, SigningKey};
 use futures::{SinkExt, StreamExt};
 use rand::{Rng, RngCore};
-use rutsubo_core::api::{DecisionRequest, SendMessageRequest};
+use rutsubo_core::api::{DecisionRequest, SendMessageRequest, SessionsQuery};
 use rutsubo_core::commands::{Command, CommandEnvelope};
 use rutsubo_core::envelope::{Envelope, PROTOCOL_VERSION};
 use rutsubo_core::events::Event;
@@ -229,6 +229,13 @@ async fn session(app: &App, socket: Socket) -> SessionEnd {
     let (mut sink, mut incoming) = socket.split();
     let mut bus = app.bus.subscribe();
 
+    // Anunciar las sesiones existentes a los suscriptores ya conectados: sin
+    // esto, un móvil/web que entró antes que el daemon no vería las sesiones
+    // creadas en el escritorio hasta que emitieran un evento vivo.
+    if announce_sessions(app, &mut sink, None).await.is_err() {
+        return SessionEnd::Retry;
+    }
+
     loop {
         tokio::select! {
             message = incoming.next() => {
@@ -280,6 +287,52 @@ async fn session(app: &App, socket: Socket) -> SessionEnd {
 }
 
 type Sink = futures::stream::SplitSink<Socket, Message>;
+
+/// Snapshot de sesiones para poblar la lista de un cliente remoto:
+/// `session_state` sintéticos SIN `seq` — no entran al secuenciador C-3 (que
+/// es por-sesión y con seq contiguos); los clientes hacen upsert de su lista.
+/// `dst = None` difunde (al conectar el daemon); `dst = Some(device)` unicasta
+/// (empujón del relay cuando un suscriptor entra tarde).
+async fn announce_sessions(
+    app: &App,
+    sink: &mut Sink,
+    dst: Option<String>,
+) -> Result<(), tokio_tungstenite::tungstenite::Error> {
+    let query = SessionsQuery {
+        cursor: None,
+        limit: None,
+        state: None,
+    };
+    let rows = match crate::store::sessions::list(&app.pool, &query, 200).await {
+        Ok(rows) => rows,
+        Err(err) => {
+            tracing::warn!(%err, "no se pudo listar sesiones para el anuncio");
+            return Ok(());
+        }
+    };
+    for row in rows {
+        let Some(state) = row.session_state() else {
+            continue;
+        };
+        let Ok(session_id) = row.id.parse::<SessionId>() else {
+            continue;
+        };
+        let envelope: Envelope<Event> = Envelope {
+            v: PROTOCOL_VERSION,
+            body: Event::SessionState {
+                state,
+                title: Some(row.title.clone()),
+                reason: None,
+            },
+            session_id: Some(session_id),
+            seq: None,
+            ts: Utc::now(),
+        };
+        let frame = serde_json::to_string(&envelope).expect("los eventos siempre serializan");
+        send_from_daemon(sink, dst.clone(), frame).await?;
+    }
+    Ok(())
+}
 
 async fn send_from_daemon(
     sink: &mut Sink,
@@ -344,11 +397,17 @@ async fn handle_to_daemon(
         frame,
         outbox_id,
         new_session_title,
+        announce_sessions: announce,
     }) = serde_json::from_str::<ToDaemon>(text)
     else {
         tracing::warn!("sobre de enrutamiento inválido del relay; descartado");
         return Ok(());
     };
+    // Empujón del relay: `src` acaba de suscribirse → unicasta el snapshot de
+    // sesiones (el `frame` va vacío; no hay comando que parsear).
+    if announce == Some(true) {
+        return announce_sessions(app, sink, Some(src)).await;
+    }
     let envelope: CommandEnvelope = match serde_json::from_str(&frame) {
         Ok(env) => env,
         Err(err) => {

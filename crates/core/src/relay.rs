@@ -34,6 +34,12 @@ pub struct ToDaemon {
     /// `session_id = null`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub new_session_title: Option<String>,
+    /// `Some(true)` cuando el relay avisa que el dispositivo `src` acaba de
+    /// suscribirse: el daemon le unicasta un snapshot de sus sesiones
+    /// (`session_state` sintéticos SIN `seq`) para poblar su lista. `frame`
+    /// va vacío. Tipo interno: no toca el contrato C-3.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub announce_sessions: Option<bool>,
 }
 
 /// Evento del daemon rumbo a los clientes de la cuenta.

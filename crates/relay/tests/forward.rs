@@ -49,6 +49,21 @@ async fn next_routed(socket: &mut Ws) -> Option<String> {
     }
 }
 
+/// Siguiente `ToDaemon` en el canal del daemon, saltando los empujones de
+/// snapshot (`announce_sessions`) que el relay manda cuando entra un suscriptor.
+async fn next_command(socket: &mut Ws) -> Option<String> {
+    loop {
+        let text = next_text(socket).await?;
+        let is_nudge = serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .and_then(|v| v.get("announce_sessions").and_then(|a| a.as_bool()))
+            == Some(true);
+        if !is_nudge {
+            return Some(text);
+        }
+    }
+}
+
 /// Verifica que NO llega ningún frame de texto en un lapso corto.
 async fn assert_silence(socket: &mut Ws) {
     let result = tokio::time::timeout(Duration::from_millis(300), async {
@@ -105,7 +120,7 @@ async fn broadcast_unicast_y_comandos() {
     // Comando del cliente → daemon envuelto en ToDaemon{src}.
     let comando = r#"{"v":1,"type":"send_message","payload":{"content":"hola","client_msg_id":"x"},"session_id":null,"ts":"2026-07-06T18:03:52Z"}"#;
     sub1.send(Message::text(comando)).await.unwrap();
-    let recibido = next_text(&mut daemon).await.expect("ToDaemon");
+    let recibido = next_command(&mut daemon).await.expect("ToDaemon");
     let sobre: serde_json::Value = serde_json::from_str(&recibido).unwrap();
     assert_eq!(sobre["src"], dev1.as_str());
     assert_eq!(sobre["frame"], comando);
@@ -228,7 +243,7 @@ async fn segundo_daemon_desplaza_al_primero_con_4001() {
     let (tok1, dev1) = common::login(&relay, "ana@example.com").await;
     let mut sub = ws(&format!("{}/v1/subscribe?token={tok1}", relay.ws_base)).await;
     sub.send(Message::text("cmd")).await.unwrap();
-    let recibido = next_text(&mut segundo).await.expect("ToDaemon");
+    let recibido = next_command(&mut segundo).await.expect("ToDaemon");
     let sobre: serde_json::Value = serde_json::from_str(&recibido).unwrap();
     assert_eq!(sobre["src"], dev1.as_str());
 }
@@ -263,4 +278,24 @@ async fn el_canal_de_daemon_rechaza_dispositivos_cliente() {
         }
         other => panic!("se esperaba error HTTP: {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn empujon_de_snapshot_al_suscribirse_con_daemon() {
+    // Con daemon conectado, un suscriptor nuevo provoca un ToDaemon con
+    // `announce_sessions: true` y `src` = su device (el daemon le unicasta
+    // su lista de sesiones; el relay no fabrica datos, RNF-10).
+    let relay = spawn().await;
+    let (token, _) = register_and_login(&relay, "ana@example.com").await;
+    let (daemon_token, _) = pair_daemon(&relay, &token).await;
+    let mut daemon = ws(&format!("{}/v1/connect?token={daemon_token}", relay.ws_base)).await;
+
+    let (tok1, dev1) = common::login(&relay, "ana@example.com").await;
+    let _sub = ws(&format!("{}/v1/subscribe?token={tok1}", relay.ws_base)).await;
+
+    let nudge = next_text(&mut daemon).await.expect("empujón");
+    let sobre: serde_json::Value = serde_json::from_str(&nudge).unwrap();
+    assert_eq!(sobre["announce_sessions"], true);
+    assert_eq!(sobre["src"], dev1.as_str());
+    assert_eq!(sobre["frame"], "");
 }

@@ -272,6 +272,7 @@ fn build_frame(
         frame,
         outbox_id: Some(outbox_id.to_owned()),
         new_session_title: new_session_title.map(str::to_owned),
+        announce_sessions: None,
     };
     serde_json::to_string(&to_daemon).expect("ToDaemon siempre serializa")
 }

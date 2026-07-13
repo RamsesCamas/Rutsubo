@@ -184,10 +184,24 @@ async fn subscriber_connection(state: RelayState, device: AuthedDevice, socket: 
     tracing::info!(account = %device.account_id, device = %device.device_id, "suscriptor conectado");
 
     // Presencia honesta: si no hay daemon conectado, decírselo ya (si no, el
-    // cliente no lo sabría hasta enviar un comando y recibir el rechazo). El
-    // indicador pasa a "escritorio offline" y el compositor a "Encolar".
-    if state.hub.daemon_tx(&device.account_id).is_none() {
-        let _ = tx.try_send(Message::Text(Utf8Bytes::from(daemon_unavailable_frame())));
+    // cliente no lo sabría hasta enviar un comando y recibir el rechazo). Y si
+    // SÍ hay daemon, pedirle que le unicaste su snapshot de sesiones: un
+    // cliente que entra tarde debe ver las sesiones existentes del escritorio.
+    match state.hub.daemon_tx(&device.account_id) {
+        None => {
+            let _ = tx.try_send(Message::Text(Utf8Bytes::from(daemon_unavailable_frame())));
+        }
+        Some(daemon) => {
+            let nudge = ToDaemon {
+                src: device.device_id.clone(),
+                frame: String::new(),
+                outbox_id: None,
+                new_session_title: None,
+                announce_sessions: Some(true),
+            };
+            let text = serde_json::to_string(&nudge).expect("ToDaemon siempre serializa");
+            let _ = daemon.try_send(Message::Text(Utf8Bytes::from(text)));
+        }
     }
 
     let (mut sink, mut incoming) = socket.split();
@@ -261,6 +275,7 @@ async fn forward_to_daemon(
             frame: text.to_owned(),
             outbox_id: None,
             new_session_title: None,
+            announce_sessions: None,
         };
         let serialized = serde_json::to_string(&envelope).expect("ToDaemon siempre serializa");
         if daemon
