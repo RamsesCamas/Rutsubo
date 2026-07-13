@@ -20,7 +20,13 @@ async fn main() {
         }
     };
 
-    let state = match rutsubo_relay::bootstrap(&cfg.db_url).await {
+    let state = match rutsubo_relay::bootstrap_with(
+        &cfg.db_url,
+        cfg.google_dev,
+        cfg.google_client_ids.clone(),
+    )
+    .await
+    {
         Ok(state) => state,
         Err(err) => {
             eprintln!("rutsubo-relay: fallo de arranque: {err}");

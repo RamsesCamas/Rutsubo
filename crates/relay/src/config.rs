@@ -10,6 +10,11 @@ pub struct RelayConfig {
     pub bind: SocketAddr,
     /// URL sqlx de SQLite. `mode=rwc` crea el archivo si no existe.
     pub db_url: String,
+    /// Client IDs de Google aceptados como `aud` del id_token (`GOOGLE_CLIENT_IDS`,
+    /// separados por coma). Vacío = solo modo dev.
+    pub google_client_ids: Vec<String>,
+    /// `RELAY_GOOGLE_DEV=1`: acepta id_tokens de prueba `dev:{sub}:{email}`.
+    pub google_dev: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -27,6 +32,18 @@ impl RelayConfig {
             .map_err(|_| ConfigError::InvalidBind(bind_raw.clone()))?;
         let db_url =
             std::env::var("RELAY_DB").unwrap_or_else(|_| "sqlite://relay.db?mode=rwc".into());
-        Ok(Self { bind, db_url })
+        let google_client_ids = std::env::var("GOOGLE_CLIENT_IDS")
+            .unwrap_or_default()
+            .split(',')
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty())
+            .collect();
+        let google_dev = std::env::var("RELAY_GOOGLE_DEV").is_ok_and(|v| v == "1");
+        Ok(Self {
+            bind,
+            db_url,
+            google_client_ids,
+            google_dev,
+        })
     }
 }

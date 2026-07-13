@@ -1,14 +1,12 @@
-//! Cuentas y tokens de dispositivo (C-2 §3.2): registro con Argon2id, emisión
-//! de tokens opacos vinculados a (cuenta, dispositivo) y rotación (RNF-07).
-//! Se persiste el sha256 del token, nunca el token en claro.
+//! Cuentas y tokens de dispositivo (C-2 §3.2 enmendado): identidad Google,
+//! emisión de tokens opacos vinculados a (cuenta, dispositivo) y rotación
+//! (RNF-07). Se persiste el sha256 del token, nunca el token en claro.
 
 use crate::RelayState;
 use crate::error::RelayError;
-use argon2::Argon2;
-use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use axum::Json;
 use axum::extract::State;
-use axum::http::{HeaderMap, StatusCode, header};
+use axum::http::{HeaderMap, header};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::Utc;
@@ -85,114 +83,84 @@ pub async fn require_bearer(
     authenticate(state, &token).await
 }
 
-// ---- POST /v1/auth/register ----
+// ---- POST /v1/auth/google (canje id_token → device_token) ----
 
 #[derive(Deserialize)]
-pub struct RegisterRequest {
-    pub email: String,
-    pub password: String,
-}
-
-#[derive(Serialize)]
-pub struct RegisterResponse {
-    pub account_id: String,
-}
-
-pub async fn register(
-    State(state): State<RelayState>,
-    Json(req): Json<RegisterRequest>,
-) -> Result<(StatusCode, Json<RegisterResponse>), RelayError> {
-    let email = req.email.trim().to_ascii_lowercase();
-    if !email.contains('@') || email.len() < 3 {
-        return Err(RelayError::validation("correo inválido"));
-    }
-    if req.password.len() < 8 {
-        return Err(RelayError::validation(
-            "la contraseña debe tener al menos 8 caracteres",
-        ));
-    }
-    let mut salt_bytes = [0u8; 16];
-    rand::rng().fill_bytes(&mut salt_bytes);
-    let salt = SaltString::encode_b64(&salt_bytes).map_err(RelayError::internal)?;
-    let hash = Argon2::default()
-        .hash_password(req.password.as_bytes(), &salt)
-        .map_err(RelayError::internal)?
-        .to_string();
-    let account_id = Ulid::new().to_string();
-    let result = sqlx::query(
-        "INSERT INTO accounts (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)",
-    )
-    .bind(&account_id)
-    .bind(&email)
-    .bind(&hash)
-    .bind(Utc::now().to_rfc3339())
-    .execute(&state.pool)
-    .await;
-    match result {
-        Ok(_) => Ok((StatusCode::CREATED, Json(RegisterResponse { account_id }))),
-        Err(sqlx::Error::Database(db)) if db.is_unique_violation() => {
-            Err(RelayError::validation("el correo ya está registrado"))
-        }
-        Err(err) => Err(err.into()),
-    }
-}
-
-// ---- POST /v1/auth/token (login → token de dispositivo) ----
-
-#[derive(Deserialize)]
-pub struct TokenRequest {
-    pub email: String,
-    pub password: String,
-    /// Nombre legible del dispositivo (p. ej. "iPhone de Ramsés").
+pub struct GoogleRequest {
+    pub id_token: String,
     #[serde(default)]
-    pub device_name: Option<String>,
+    pub device: DeviceInfo,
+}
+
+#[derive(Deserialize, Default)]
+pub struct DeviceInfo {
+    /// mobile | desktop | web (se guarda en `devices.platform`).
+    #[serde(default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 #[derive(Serialize)]
-pub struct TokenResponse {
-    pub token: String,
+pub struct GoogleResponse {
+    pub device_token: String,
     pub device_id: String,
     pub account_id: String,
 }
 
-pub async fn token(
+pub async fn google(
     State(state): State<RelayState>,
-    Json(req): Json<TokenRequest>,
-) -> Result<Json<TokenResponse>, RelayError> {
-    let email = req.email.trim().to_ascii_lowercase();
-    let row = sqlx::query("SELECT id, password_hash FROM accounts WHERE email = ?")
-        .bind(&email)
+    Json(req): Json<GoogleRequest>,
+) -> Result<Json<GoogleResponse>, RelayError> {
+    // Verifica el id_token (real JWKS o dev) contra los client IDs aceptados.
+    let claims = state
+        .verifier
+        .verify(&req.id_token, &state.google_client_ids)
+        .await?;
+
+    // La cuenta se ancla al `sub` de Google (estable). Upsert.
+    let existing: Option<String> = sqlx::query_scalar("SELECT id FROM accounts WHERE google_sub = ?")
+        .bind(&claims.sub)
         .fetch_optional(&state.pool)
         .await?;
-    // Credenciales malas y cuenta inexistente responden igual (401).
-    let Some(row) = row else {
-        return Err(RelayError::unauthorized());
+    let account_id = match existing {
+        Some(id) => id,
+        None => {
+            let id = Ulid::new().to_string();
+            // password_hash es NOT NULL sin uso en cuentas Google → placeholder ''.
+            sqlx::query(
+                "INSERT INTO accounts (id, email, password_hash, google_sub, created_at) \
+                 VALUES (?, ?, '', ?, ?)",
+            )
+            .bind(&id)
+            .bind(&claims.email)
+            .bind(&claims.sub)
+            .bind(Utc::now().to_rfc3339())
+            .execute(&state.pool)
+            .await?;
+            id
+        }
     };
-    let stored: String = row.get("password_hash");
-    let parsed = PasswordHash::new(&stored).map_err(RelayError::internal)?;
-    if Argon2::default()
-        .verify_password(req.password.as_bytes(), &parsed)
-        .is_err()
-    {
-        return Err(RelayError::unauthorized());
-    }
-    let account_id: String = row.get("id");
 
+    // Cada login crea un device `client` con su plataforma.
     let device_id = Ulid::new().to_string();
-    let name = req.device_name.unwrap_or_default();
+    let name = req.device.name.unwrap_or_default();
+    let platform = req.device.kind.unwrap_or_else(|| "web".into());
     sqlx::query(
-        "INSERT INTO devices (id, account_id, name, kind, created_at) VALUES (?, ?, ?, 'client', ?)",
+        "INSERT INTO devices (id, account_id, name, kind, platform, created_at) \
+         VALUES (?, ?, ?, 'client', ?, ?)",
     )
     .bind(&device_id)
     .bind(&account_id)
     .bind(&name)
+    .bind(&platform)
     .bind(Utc::now().to_rfc3339())
     .execute(&state.pool)
     .await?;
 
-    let token = issue_token(&state, &device_id).await?;
-    Ok(Json(TokenResponse {
-        token,
+    let device_token = issue_token(&state, &device_id).await?;
+    Ok(Json(GoogleResponse {
+        device_token,
         device_id,
         account_id,
     }))

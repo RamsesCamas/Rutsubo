@@ -39,35 +39,38 @@ pub async fn spawn() -> TestRelay {
     }
 }
 
-pub async fn register_and_login(relay: &TestRelay, email: &str) -> (String, String) {
-    let http = reqwest::Client::new();
-    let status = http
-        .post(format!("{}/v1/auth/register", relay.base))
-        .json(&serde_json::json!({"email": email, "password": "secreta-123"}))
+/// Login con Google en modo dev: el `sub` se deriva del correo, así que
+/// llamadas repetidas con el mismo correo caen en la MISMA cuenta (cada una
+/// crea un device nuevo, como el login de antes). El relay de test arranca en
+/// modo `google_dev`.
+pub async fn google_login(relay: &TestRelay, email: &str) -> (String, String) {
+    let id_token = format!("dev:sub-{email}:{email}");
+    let body: serde_json::Value = reqwest::Client::new()
+        .post(format!("{}/v1/auth/google", relay.base))
+        .json(&serde_json::json!({
+            "id_token": id_token,
+            "device": {"kind": "mobile", "name": "test"}
+        }))
         .send()
         .await
-        .expect("register")
-        .status();
-    assert_eq!(status, 201);
-    login(relay, email).await
-}
-
-/// Devuelve `(token, device_id)` de un dispositivo cliente nuevo.
-pub async fn login(relay: &TestRelay, email: &str) -> (String, String) {
-    let http = reqwest::Client::new();
-    let body: serde_json::Value = http
-        .post(format!("{}/v1/auth/token", relay.base))
-        .json(&serde_json::json!({"email": email, "password": "secreta-123"}))
-        .send()
-        .await
-        .expect("token")
+        .expect("google")
         .json()
         .await
         .expect("json");
     (
-        body["token"].as_str().expect("token").to_owned(),
+        body["device_token"].as_str().expect("device_token").to_owned(),
         body["device_id"].as_str().expect("device_id").to_owned(),
     )
+}
+
+/// Alias histórico (antes register+login); ahora un login Google dev.
+pub async fn register_and_login(relay: &TestRelay, email: &str) -> (String, String) {
+    google_login(relay, email).await
+}
+
+/// Alias histórico; otro device de la misma cuenta.
+pub async fn login(relay: &TestRelay, email: &str) -> (String, String) {
+    google_login(relay, email).await
 }
 
 /// Flujo de pairing completo (C-2 §3.2.2): devuelve `(daemon_token, device_id)`.

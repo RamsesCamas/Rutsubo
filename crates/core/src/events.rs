@@ -144,6 +144,13 @@ pub enum Event {
         message: String,
         fatal: bool,
     },
+    /// Una tarea encolada en el buzón (ADR-009) fue drenada y convertida en un
+    /// mensaje real: "tu tarea encolada ya corre". `session_id` viaja en el
+    /// sobre (puede ser una sesión recién creada).
+    TaskDequeued {
+        outbox_id: String,
+        message_id: MessageId,
+    },
 }
 
 impl Event {
@@ -162,6 +169,7 @@ impl Event {
             Event::ModelProviderChanged { .. } => "model_provider_changed",
             Event::DaemonUnavailable => "daemon_unavailable",
             Event::Error { .. } => "error",
+            Event::TaskDequeued { .. } => "task_dequeued",
         }
     }
 }

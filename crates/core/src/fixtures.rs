@@ -163,6 +163,17 @@ pub fn event_fixtures() -> Vec<(&'static str, Value)> {
                 "session_id": SID, "seq": 431, "ts": TS
             }),
         ),
+        (
+            "task_dequeued",
+            json!({
+                "v": 1, "type": "task_dequeued",
+                "payload": {
+                    "outbox_id": "01J1ZK0M0000000000000000EE",
+                    "message_id": "01J1ZH2K0000000000000000AA"
+                },
+                "session_id": SID, "seq": 440, "ts": TS
+            }),
+        ),
     ]
 }
 

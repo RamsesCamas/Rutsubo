@@ -2,6 +2,7 @@
 //! consultas verificadas en compilación (caché offline en `.sqlx/`,
 //! regenerable con `just prepare`).
 
+pub mod acks;
 pub mod approvals;
 pub mod audit;
 pub mod config;

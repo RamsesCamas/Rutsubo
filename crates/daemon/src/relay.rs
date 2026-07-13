@@ -286,7 +286,25 @@ async fn send_from_daemon(
     dst: Option<String>,
     frame: String,
 ) -> Result<(), tokio_tungstenite::tungstenite::Error> {
-    let envelope = FromDaemon { dst, frame };
+    let envelope = FromDaemon {
+        dst,
+        frame,
+        ack_outbox_id: None,
+    };
+    let text = serde_json::to_string(&envelope).expect("FromDaemon siempre serializa");
+    sink.send(Message::text(text)).await
+}
+
+/// Acuse de una tarea del buzón: el relay borra la fila al recibirlo.
+async fn send_task_ack(
+    sink: &mut Sink,
+    outbox_id: String,
+) -> Result<(), tokio_tungstenite::tungstenite::Error> {
+    let envelope = FromDaemon {
+        dst: None,
+        frame: String::new(),
+        ack_outbox_id: Some(outbox_id),
+    };
     let text = serde_json::to_string(&envelope).expect("FromDaemon siempre serializa");
     sink.send(Message::text(text)).await
 }
@@ -321,7 +339,13 @@ async fn handle_to_daemon(
     sink: &mut Sink,
     text: &str,
 ) -> Result<(), tokio_tungstenite::tungstenite::Error> {
-    let Ok(ToDaemon { src, frame }) = serde_json::from_str::<ToDaemon>(text) else {
+    let Ok(ToDaemon {
+        src,
+        frame,
+        outbox_id,
+        new_session_title,
+    }) = serde_json::from_str::<ToDaemon>(text)
+    else {
         tracing::warn!("sobre de enrutamiento inválido del relay; descartado");
         return Ok(());
     };
@@ -332,6 +356,11 @@ async fn handle_to_daemon(
             return send_command_error(sink, &src, None, &api_err).await;
         }
     };
+
+    // Tarea drenada del buzón (ADR-009): dedup + crear/inyectar + acuse.
+    if let Some(outbox_id) = outbox_id {
+        return handle_queued_task(app, sink, &src, envelope, outbox_id, new_session_title).await;
+    }
 
     match envelope.body {
         Command::SubscribeSession {
@@ -398,6 +427,83 @@ async fn handle_to_daemon(
         }
     }
     Ok(())
+}
+
+/// Procesa una tarea drenada del buzón (ADR-009): dedup por `outbox_id` (el
+/// relay entrega at-least-once), resuelve/crea la sesión, la inyecta por el
+/// MISMO pipeline `send_message_inner`, emite `task_dequeued` y SIEMPRE acusa
+/// (para que el relay borre la fila, incluso si la tarea no aplica).
+async fn handle_queued_task(
+    app: &App,
+    sink: &mut Sink,
+    src: &str,
+    envelope: CommandEnvelope,
+    outbox_id: String,
+    new_session_title: Option<String>,
+) -> Result<(), tokio_tungstenite::tungstenite::Error> {
+    // Dedup: si ya se procesó, solo re-acusar (no reejecutar).
+    match crate::store::acks::mark_new(&app.pool, &outbox_id).await {
+        Ok(true) => {}
+        Ok(false) => return send_task_ack(sink, outbox_id).await,
+        Err(err) => {
+            tracing::error!(%err, "no se pudo deduplicar la tarea del buzón");
+            return send_task_ack(sink, outbox_id).await;
+        }
+    }
+
+    // El buzón solo transporta send_message (ADR-007: nada de aprobaciones).
+    let Command::SendMessage {
+        content,
+        client_msg_id,
+    } = envelope.body
+    else {
+        tracing::warn!("tarea del buzón con comando no permitido; descartada");
+        return send_task_ack(sink, outbox_id).await;
+    };
+
+    // Sesión objetivo: la del sobre, o una nueva.
+    let session_id = match envelope.session_id {
+        Some(sid) => sid,
+        None => match crate::api::sessions::create_session_inner(app, new_session_title).await {
+            Ok(sid) => sid,
+            Err(err) => {
+                send_command_error(sink, src, None, &err).await?;
+                return send_task_ack(sink, outbox_id).await;
+            }
+        },
+    };
+
+    let req = SendMessageRequest {
+        content,
+        client_msg_id,
+    };
+    match crate::api::sessions::send_message_inner(app, &session_id.to_string(), req).await {
+        Ok(resp) => {
+            // "tu tarea encolada ya corre" (RF-17, visible en todos los clientes).
+            let _ = app
+                .emit(
+                    session_id,
+                    Event::TaskDequeued {
+                        outbox_id: outbox_id.clone(),
+                        message_id: resp.message_id,
+                    },
+                    None,
+                )
+                .await;
+            let _ = crate::store::audit::insert(
+                &app.pool,
+                Some(&session_id),
+                "queued_task",
+                &serde_json::json!({"outbox_id": outbox_id, "enqueued_by": src}),
+                Utc::now(),
+            )
+            .await;
+        }
+        Err(err) => {
+            send_command_error(sink, src, Some(session_id), &err).await?;
+        }
+    }
+    send_task_ack(sink, outbox_id).await
 }
 
 #[cfg(test)]

@@ -10,7 +10,9 @@ pub mod auth;
 pub mod config;
 pub mod devices;
 pub mod error;
+pub mod google;
 pub mod hub;
+pub mod outbox;
 pub mod pairing;
 pub mod ws;
 
@@ -23,14 +25,29 @@ use std::sync::Arc;
 pub struct RelayState {
     pub pool: SqlitePool,
     pub hub: Arc<hub::Hub>,
+    /// Verificador del id_token de Google (real JWKS o dev).
+    pub verifier: Arc<google::Verifier>,
+    /// Client IDs aceptados como `aud` (de `GOOGLE_CLIENT_IDS`).
+    pub google_client_ids: Arc<Vec<String>>,
 }
 
+/// Arranque con la config por defecto (usado en tests: modo dev, sin client IDs).
 pub async fn bootstrap(db_url: &str) -> Result<RelayState, Box<dyn std::error::Error>> {
+    bootstrap_with(db_url, true, Vec::new()).await
+}
+
+pub async fn bootstrap_with(
+    db_url: &str,
+    google_dev: bool,
+    google_client_ids: Vec<String>,
+) -> Result<RelayState, Box<dyn std::error::Error>> {
     let pool = SqlitePool::connect(db_url).await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
     Ok(RelayState {
         pool,
         hub: Arc::new(hub::Hub::default()),
+        verifier: Arc::new(google::Verifier::from_config(google_dev)),
+        google_client_ids: Arc::new(google_client_ids),
     })
 }
 
@@ -42,13 +59,16 @@ pub fn router(state: RelayState) -> Router {
 
     Router::new()
         .route("/v1/health", get(health))
-        .route("/v1/auth/register", post(auth::register))
-        .route("/v1/auth/token", post(auth::token))
+        // Identidad Google (sustituye register/token de password).
+        .route("/v1/auth/google", post(auth::google))
         .route("/v1/auth/token/rotate", post(auth::rotate))
         .route("/v1/pairing/codes", post(pairing::create_code))
         .route("/v1/pairing/claim", post(pairing::claim))
         .route("/v1/devices", get(devices::list))
         .route("/v1/devices/{id}", delete(devices::revoke))
+        // Buzón de tareas offline (ADR-009).
+        .route("/v1/outbox", post(outbox::enqueue).get(outbox::list))
+        .route("/v1/outbox/{id}", delete(outbox::cancel))
         .route("/v1/connect", get(ws::connect))
         .route("/v1/subscribe", get(ws::subscribe))
         .layer(cors)

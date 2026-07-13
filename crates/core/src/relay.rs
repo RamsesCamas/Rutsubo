@@ -25,6 +25,15 @@ pub struct ToDaemon {
     pub src: String,
     /// Sobre C-3 (`CommandEnvelope`) serializado, opaco para el relay.
     pub frame: String,
+    /// `Some` cuando este `ToDaemon` es una tarea drenada del buzón (ADR-009):
+    /// el daemon deduplica por este id y responde con `ack_outbox_id`. El
+    /// `frame` es siempre un `CommandEnvelope::SendMessage`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outbox_id: Option<String>,
+    /// Título para crear una sesión nueva cuando la tarea encolada apunta a
+    /// `session_id = null`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new_session_title: Option<String>,
 }
 
 /// Evento del daemon rumbo a los clientes de la cuenta.
@@ -35,4 +44,8 @@ pub struct FromDaemon {
     pub dst: Option<String>,
     /// Sobre C-3 (`EventEnvelope`) serializado, opaco para el relay.
     pub frame: String,
+    /// `Some` cuando este mensaje es el acuse de una tarea del buzón: el relay
+    /// borra la fila del outbox y NO reenvía `frame` (que va vacío).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ack_outbox_id: Option<String>,
 }

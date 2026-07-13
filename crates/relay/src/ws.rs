@@ -73,11 +73,14 @@ async fn daemon_connection(state: RelayState, device: AuthedDevice, socket: WebS
     if let Some(previous) =
         state
             .hub
-            .register_daemon(&device.account_id, &conn_id, &device.device_id, tx)
+            .register_daemon(&device.account_id, &conn_id, &device.device_id, tx.clone())
     {
         let _ = previous.try_send(close_frame(CLOSE_SUPERSEDED, "superseded"));
     }
     tracing::info!(account = %device.account_id, device = %device.device_id, "daemon conectado");
+
+    // Drenar el buzón: entregar las tareas encoladas mientras estuvo offline.
+    crate::outbox::drain_on_connect(&state, &device.account_id, &tx).await;
 
     let (mut sink, mut incoming) = socket.split();
     let mut ping = tokio::time::interval(PING_INTERVAL);
@@ -130,10 +133,18 @@ async fn daemon_connection(state: RelayState, device: AuthedDevice, socket: WebS
 /// El `frame` interior jamás se deserializa (RNF-10).
 fn route_from_daemon(state: &RelayState, account_id: &str, text: &str) {
     match serde_json::from_str::<FromDaemon>(text) {
-        Ok(FromDaemon { dst: None, frame }) => state.hub.broadcast(account_id, &frame),
+        // Acuse de una tarea del buzón: borrar la fila (implementado en outbox.rs).
+        Ok(FromDaemon {
+            ack_outbox_id: Some(outbox_id),
+            ..
+        }) => crate::outbox::spawn_ack(state.clone(), account_id.to_owned(), outbox_id),
+        Ok(FromDaemon {
+            dst: None, frame, ..
+        }) => state.hub.broadcast(account_id, &frame),
         Ok(FromDaemon {
             dst: Some(device_id),
             frame,
+            ..
         }) => state.hub.send_to(account_id, &device_id, &frame),
         Err(err) => {
             tracing::warn!(%err, "sobre de enrutamiento inválido del daemon; descartado");
@@ -233,6 +244,8 @@ async fn forward_to_daemon(
         let envelope = ToDaemon {
             src: device.device_id.clone(),
             frame: text.to_owned(),
+            outbox_id: None,
+            new_session_title: None,
         };
         let serialized = serde_json::to_string(&envelope).expect("ToDaemon siempre serializa");
         if daemon

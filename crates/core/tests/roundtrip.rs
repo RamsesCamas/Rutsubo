@@ -48,8 +48,8 @@ fn el_catalogo_cubre_todos_los_eventos_y_comandos() {
         .collect();
     assert_eq!(
         event_kinds.len(),
-        11,
-        "cada uno de los 11 eventos C-3 debe tener al menos un fixture"
+        12,
+        "cada uno de los 12 eventos C-3 debe tener al menos un fixture"
     );
     let command_kinds: std::collections::BTreeSet<String> = command_fixtures()
         .into_iter()

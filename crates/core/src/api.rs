@@ -424,6 +424,66 @@ pub struct AuditPage {
     pub next_cursor: Option<String>,
 }
 
+// ---- Buzón de tareas offline (C-2 enmendado por ADR-009, endpoints del relay) ----
+
+/// Destino de una tarea encolada: una sesión existente o una nueva.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct OutboxTarget {
+    /// `null` = crear una sesión nueva al drenar.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<SessionId>,
+    /// Título de la sesión nueva (solo si `session_id` es null).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new_session_title: Option<String>,
+}
+
+/// POST /v1/outbox — encolar una tarea (equivale a un `send_message` diferido).
+/// El buzón acepta SOLO mensajes; nada de aprobaciones ni control (ADR-007).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct OutboxRequest {
+    pub target: OutboxTarget,
+    /// `plaintext` (M2) o `sealed_box` (M3, cifrado para el daemon).
+    pub payload_kind: String,
+    /// Texto del mensaje (o ciphertext base64 en `sealed_box`). ≤ 32 KB.
+    pub payload: String,
+    /// UUID de idempotencia (como en `send_message`).
+    pub client_msg_id: String,
+}
+
+/// Respuesta al encolar.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct OutboxAccepted {
+    pub outbox_id: String,
+    /// `queued` o `delivered` (entrega inmediata si el daemon estaba conectado).
+    pub state: String,
+    #[ts(type = "string")]
+    pub expires_at: DateTime<Utc>,
+}
+
+/// Una tarea en el buzón (GET /v1/outbox).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct OutboxItem {
+    pub id: String,
+    pub target: OutboxTarget,
+    /// `queued` | `delivered` | `expired`.
+    pub state: String,
+    pub payload_kind: String,
+    #[ts(type = "string")]
+    pub enqueued_at: DateTime<Utc>,
+    #[ts(type = "string")]
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct OutboxPage {
+    pub items: Vec<OutboxItem>,
+}
+
 // ---- Ticket temporal para el WebSocket remoto (POST /v1/ws/ticket) ----
 
 /// El navegador no puede mandar `Authorization` en el handshake WS y el proxy

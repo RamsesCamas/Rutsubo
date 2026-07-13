@@ -1,12 +1,12 @@
-//! Cuentas, tokens y dispositivos (C-2): registro, login, rotación (RNF-07)
-//! y revocación por dispositivo.
+//! Identidad Google, tokens de dispositivo, rotación (RNF-07) y revocación
+//! por dispositivo (C-2 enmendado). El relay de test arranca en modo dev.
 
 mod common;
 
-use common::{register_and_login, spawn};
+use common::{google_login, spawn};
 
 #[tokio::test]
-async fn registro_login_rotacion_y_revocacion() {
+async fn login_google_rotacion_y_revocacion() {
     let relay = spawn().await;
     let http = reqwest::Client::new();
 
@@ -18,35 +18,17 @@ async fn registro_login_rotacion_y_revocacion() {
         .unwrap();
     assert_eq!(health.status(), 200);
 
-    let (token, device_id) = register_and_login(&relay, "ana@example.com").await;
+    let (token, device_id) = google_login(&relay, "ana@example.com").await;
     assert!(token.starts_with("rtb_"), "prefijo de diagnóstico");
 
-    // Registro duplicado → 422 validation_failed.
-    let dup = http
-        .post(format!("{}/v1/auth/register", relay.base))
-        .json(&serde_json::json!({"email": "ana@example.com", "password": "secreta-123"}))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(dup.status(), 422);
-    let body: serde_json::Value = dup.json().await.unwrap();
-    assert_eq!(body["error"]["code"], "validation_failed");
-
-    // Contraseña equivocada → 401 (misma respuesta que cuenta inexistente).
+    // id_token dev mal formado → 401.
     let bad = http
-        .post(format!("{}/v1/auth/token", relay.base))
-        .json(&serde_json::json!({"email": "ana@example.com", "password": "incorrecta!"}))
+        .post(format!("{}/v1/auth/google", relay.base))
+        .json(&serde_json::json!({"id_token": "basura", "device": {}}))
         .send()
         .await
         .unwrap();
     assert_eq!(bad.status(), 401);
-    let ghost = http
-        .post(format!("{}/v1/auth/token", relay.base))
-        .json(&serde_json::json!({"email": "nadie@example.com", "password": "incorrecta!"}))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(ghost.status(), 401);
 
     // /v1/devices exige Bearer.
     let anon = http
@@ -91,8 +73,23 @@ async fn registro_login_rotacion_y_revocacion() {
         .unwrap();
     assert_eq!(stale.status(), 401);
 
-    // Segundo dispositivo y revocación: solo su token se invalida.
-    let (second_token, second_id) = common::login(&relay, "ana@example.com").await;
+    // Segundo dispositivo de la MISMA cuenta (mismo correo → mismo sub) y
+    // revocación: solo su token se invalida. `/v1/devices` debe listar 2.
+    let (second_token, second_id) = google_login(&relay, "ana@example.com").await;
+    let two: serde_json::Value = http
+        .get(format!("{}/v1/devices", relay.base))
+        .bearer_auth(new_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        two["devices"].as_array().unwrap().len(),
+        2,
+        "mismo sub = misma cuenta"
+    );
     let revoke = http
         .delete(format!("{}/v1/devices/{second_id}", relay.base))
         .bearer_auth(new_token)
@@ -107,16 +104,9 @@ async fn registro_login_rotacion_y_revocacion() {
         .await
         .unwrap();
     assert_eq!(dead.status(), 401);
-    let alive = http
-        .get(format!("{}/v1/devices", relay.base))
-        .bearer_auth(new_token)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(alive.status(), 200);
 
-    // Revocar un dispositivo ajeno responde 404 sin filtrar existencia.
-    let (other_token, _) = register_and_login(&relay, "eva@example.com").await;
+    // Revocar un dispositivo ajeno (otra cuenta) responde 404.
+    let (other_token, _) = google_login(&relay, "eva@example.com").await;
     let foreign = http
         .delete(format!("{}/v1/devices/{device_id}", relay.base))
         .bearer_auth(&other_token)
@@ -127,16 +117,16 @@ async fn registro_login_rotacion_y_revocacion() {
 }
 
 #[tokio::test]
-async fn valida_correo_y_contrasena() {
+async fn google_dev_valida_formato() {
     let relay = spawn().await;
     let http = reqwest::Client::new();
-    for (email, password) in [("sin-arroba", "secreta-123"), ("ana@example.com", "corta")] {
+    for bad in ["dev::correo@x.com", "dev:sub:sin-arroba", "no-dev:sub:x@y.z"] {
         let res = http
-            .post(format!("{}/v1/auth/register", relay.base))
-            .json(&serde_json::json!({"email": email, "password": password}))
+            .post(format!("{}/v1/auth/google", relay.base))
+            .json(&serde_json::json!({"id_token": bad, "device": {}}))
             .send()
             .await
             .unwrap();
-        assert_eq!(res.status(), 422, "{email}/{password}");
+        assert_eq!(res.status(), 401, "id_token: {bad}");
     }
 }

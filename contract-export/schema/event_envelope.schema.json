@@ -453,6 +453,35 @@
         "payload"
       ],
       "type": "object"
+    },
+    {
+      "description": "Una tarea encolada en el buzón (ADR-009) fue drenada y convertida en un\nmensaje real: \"tu tarea encolada ya corre\". `session_id` viaja en el\nsobre (puede ser una sesión recién creada).",
+      "properties": {
+        "payload": {
+          "properties": {
+            "message_id": {
+              "$ref": "#/$defs/MessageId"
+            },
+            "outbox_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "outbox_id",
+            "message_id"
+          ],
+          "type": "object"
+        },
+        "type": {
+          "const": "task_dequeued",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
     }
   ],
   "properties": {

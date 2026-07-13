@@ -35,6 +35,43 @@ fn dto_or_500(row: &store::sessions::SessionRow) -> Result<SessionDto, ApiError>
         .ok_or_else(|| ApiError::internal("fila de sesión corrupta"))
 }
 
+/// Crea una sesión desde una tarea del buzón (ADR-009), sin handler HTTP.
+/// Sin workspace explícito: usa el directorio de trabajo del daemon (donde el
+/// usuario lo lanzó, típicamente su proyecto). En modo remote: `remote://chat`.
+pub async fn create_session_inner(
+    app: &App,
+    title: Option<String>,
+) -> Result<SessionId, ApiError> {
+    let title = title.unwrap_or_default();
+    if title.chars().count() > MAX_TITLE_CHARS {
+        return Err(ApiError::validation(
+            format!("title supera {MAX_TITLE_CHARS} caracteres"),
+            None,
+        ));
+    }
+    let workspace_path = if app.cfg.auth_mode == crate::config::AuthMode::Remote {
+        "remote://chat".to_string()
+    } else {
+        std::env::current_dir()
+            .map(|p| p.to_string_lossy().into_owned())
+            .map_err(ApiError::internal)?
+    };
+    let id = SessionId::new();
+    store::sessions::create(&app.pool, &id, &workspace_path, &title, Utc::now()).await?;
+    app.emit(
+        id,
+        Event::SessionState {
+            state: SessionState::Idle,
+            title: (!title.is_empty()).then(|| title.clone()),
+            reason: None,
+        },
+        None,
+    )
+    .await
+    .map_err(ApiError::internal)?;
+    Ok(id)
+}
+
 /// POST /v1/sessions — 201 + Location. No es idempotente: dos POST idénticos
 /// crean dos sesiones (C-1).
 pub async fn create(

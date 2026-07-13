@@ -155,7 +155,7 @@ fn schema_shape() {
         .or_else(|| schema.get("anyOf"))
         .and_then(|v| v.as_array())
         .unwrap_or_else(|| panic!("el schema debe tener oneOf/anyOf en la raíz: {schema:#}"));
-    assert_eq!(variants.len(), 11, "11 eventos C-3");
+    assert_eq!(variants.len(), 12, "12 eventos C-3");
 
     let expected_kinds = [
         "session_state",
@@ -169,6 +169,7 @@ fn schema_shape() {
         "model_provider_changed",
         "daemon_unavailable",
         "error",
+        "task_dequeued",
     ];
     let kinds: Vec<&str> = variants
         .iter()
