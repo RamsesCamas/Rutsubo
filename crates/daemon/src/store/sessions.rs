@@ -58,6 +58,22 @@ pub async fn create(
     Ok(())
 }
 
+/// Carpeta del proyecto más reciente en ESTA máquina (para sesiones creadas
+/// desde el buzón, ADR-009: el móvil/web no eligen carpeta). Ignora las
+/// sesiones remote y las archivadas. Runtime query (no macro) para no
+/// regenerar la caché `.sqlx`.
+pub async fn most_recent_workspace(pool: &SqlitePool) -> Result<Option<String>, sqlx::Error> {
+    use sqlx::Row;
+    let row = sqlx::query(
+        "SELECT workspace_path FROM sessions \
+         WHERE workspace_path NOT LIKE 'remote://%' AND state != 'archived' \
+         ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|r| r.get::<String, _>("workspace_path")))
+}
+
 pub async fn get(pool: &SqlitePool, id: &SessionId) -> Result<Option<SessionRow>, sqlx::Error> {
     let id = id.to_string();
     sqlx::query_as!(

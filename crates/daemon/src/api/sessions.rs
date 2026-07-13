@@ -36,8 +36,10 @@ fn dto_or_500(row: &store::sessions::SessionRow) -> Result<SessionDto, ApiError>
 }
 
 /// Crea una sesión desde una tarea del buzón (ADR-009), sin handler HTTP.
-/// Sin workspace explícito: usa el directorio de trabajo del daemon (donde el
-/// usuario lo lanzó, típicamente su proyecto). En modo remote: `remote://chat`.
+/// El móvil/web no eligen carpeta (ahí no se desarrolla, solo se gestiona):
+/// la carpeta la decide el ESCRITORIO — el último proyecto usado aquí; si no
+/// hay ninguno, `RUTSUBO_DEFAULT_WORKSPACE`; al final el cwd del daemon.
+/// En modo remote: `remote://chat`.
 pub async fn create_session_inner(
     app: &App,
     title: Option<String>,
@@ -51,6 +53,13 @@ pub async fn create_session_inner(
     }
     let workspace_path = if app.cfg.auth_mode == crate::config::AuthMode::Remote {
         "remote://chat".to_string()
+    } else if let Some(recent) = store::sessions::most_recent_workspace(&app.pool)
+        .await
+        .map_err(ApiError::internal)?
+    {
+        recent
+    } else if let Ok(dir) = std::env::var("RUTSUBO_DEFAULT_WORKSPACE") {
+        dir
     } else {
         std::env::current_dir()
             .map(|p| p.to_string_lossy().into_owned())
