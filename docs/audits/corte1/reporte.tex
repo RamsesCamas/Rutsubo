@@ -1,0 +1,452 @@
+\documentclass[11pt]{article}
+
+% ---- Identidad documental (familia Rutsubo) ----
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{mathpazo}                 % Palatino en el cuerpo
+\usepackage[scaled=0.92]{helvet}      % Helvetica en encabezados
+\usepackage[a4paper,margin=2.4cm,headsep=0.7cm]{geometry}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
+\usepackage{caption}
+
+% Paleta
+\definecolor{grafito}{HTML}{26261F}
+\definecolor{salvia}{HTML}{57634F}
+\definecolor{salviacl}{HTML}{8A9880}
+\definecolor{papel}{HTML}{F8F6F1}
+\definecolor{linea}{HTML}{BDB8AC}
+\definecolor{tinta}{HTML}{2B2B24}
+
+\pagecolor{papel}
+\color{tinta}
+\captionsetup{labelfont={sf,bf,color=salvia},font=small}
+
+% Encabezados sans, en salvia
+\titleformat{\section}{\sffamily\large\bfseries\color{salvia}}{\thesection.}{0.5em}{}
+\titleformat{\subsection}{\sffamily\normalsize\bfseries\color{grafito}}{\thesubsection}{0.5em}{}
+\titlespacing{\section}{0pt}{1.4em}{0.6em}
+
+% Regla fina de la familia
+\newcommand{\regla}{\noindent\textcolor{linea}{\rule{\linewidth}{0.4pt}}}
+\newcommand{\veredicto}[1]{\textbf{\textcolor{salvia}{#1}}}
+
+% Pie/encabezado
+\pagestyle{fancy}\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+\fancyhead[L]{\sffamily\footnotesize\textcolor{salvia}{Rutsubo}}
+\fancyhead[R]{\sffamily\footnotesize\textcolor{linea}{Reporte de Métricas y Seguridad · Corte 1}}
+\fancyfoot[C]{\sffamily\footnotesize\textcolor{linea}{\thepage}}
+\renewcommand{\arraystretch}{1.25}
+
+\emergencystretch=3em     % evita overfull sin patrones de guionado en español
+\hyphenation{Light-house re-la-y dae-mon}
+
+\begin{document}
+\sloppy
+
+% ============================ PORTADA ============================
+\thispagestyle{empty}
+\vspace*{2.2cm}
+{\sffamily
+\noindent\textcolor{salvia}{\rule{2.2cm}{2pt}}\\[1.4em]
+\noindent{\Huge\bfseries\color{grafito} Primer Reporte de Métricas\\[0.25em] y Auditoría de Seguridad}\\[0.8em]
+\noindent{\large\color{salvia} Rutsubo — agente de código local-first}\\[0.6em]
+\regla\\[0.3em]
+\noindent{\normalsize\color{linea} Corte 1 de 2 · Lighthouse + OWASP ZAP · evidencia reproducible}
+}
+
+\vfill
+\noindent\renewcommand{\arraystretch}{1.35}
+\begin{tabular}{@{}>{\sffamily\bfseries\color{salvia}}l l@{}}
+Materia   & Tecnologías para el Desarrollo de Aplicaciones \\
+Docente   & Mtro. Ali Santiago López Zunún \\
+Autor     & Ramsés Alejandro Camas Nájera \\
+Programa  & MCIT — Sistemas Inteligentes \\
+Periodo   & 2.\textsuperscript{o} cuatrimestre \\
+Corte     & 1 de 2 \\
+Fecha     & 13 de julio de 2026 \\
+\end{tabular}
+\vspace*{1.2cm}
+\newpage
+
+% ============================ 1. RESUMEN ============================
+\section{Resumen ejecutivo}
+Este corte documenta la primera medición de rendimiento y auditoría de seguridad
+de Rutsubo con evidencia reproducible. Se auditaron las \textbf{tres superficies
+HTTP} del sistema conforme a los requisitos no funcionales: la superficie pública
+estática (Astro) con \textbf{Lighthouse} (RNF-02, ADR-002) y las dos APIs —daemon
+y relay— con \textbf{OWASP ZAP} (RNF-09).
+
+\medskip
+\noindent\textbf{Rendimiento (Lighthouse).} Las cuatro combinaciones
+página\,$\times$\,perfil (Inicio y Login, en móvil y escritorio) obtienen
+\veredicto{Performance 100, Accessibility 100, SEO 100 y Best Practices 96},
+con First Contentful Paint entre 165 y 620~ms. El presupuesto RNF-02
+(FCP $<$ 1\,500~ms) se \veredicto{cumple con holgura} en las cuatro. Un único
+hallazgo (un 404 de \texttt{favicon.ico}) explica el 96 de Best Practices.
+
+\medskip
+\noindent\textbf{Seguridad (ZAP).} Cero hallazgos de riesgo Alto; cero fallos
+(\textsf{FAIL}). El \veredicto{daemon no presentó ninguna alerta} sobre 11
+endpoints autenticados: el endurecimiento de cabeceras de la fase API se sostuvo.
+El relay concentra los \veredicto{2 hallazgos} del corte: una configuración CORS
+permisiva (riesgo Medio) y la ausencia de la cabecera \texttt{X-Content-Type-Options}
+(riesgo Bajo).
+
+\medskip
+\noindent\textbf{Correcciones.} Se comprometen \veredicto{3 correcciones} para el
+corte 2 (una de Lighthouse, dos del relay); \veredicto{3 hallazgos} se descartan
+con justificación técnica y \veredicto{1} se acepta temporalmente con su
+disparador. La corrección en caliente prevista para fugas de información
+(sección~4.3 de la orden) \veredicto{no fue necesaria}: los cuerpos de error de
+ambas APIs son sobres \texttt{ErrorEnvelope} estructurados, sin trazas de pila.
+
+\regla
+
+% ============================ 2. METODOLOGÍA ============================
+\section{Metodología}
+\subsection{Herramientas y entorno}
+\noindent
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+\textbf{Componente} & \textbf{Versión / detalle} \\
+\midrule
+Lighthouse (CLI)   & 13.4.0 (npm) \\
+Navegador          & Google Chrome for Testing 149.0.7827.55 (headless) \\
+OWASP ZAP          & 2.17.0 (imagen \texttt{zaproxy/zap-stable}) \\
+Docker             & 29.1.3 \\
+Sistema            & Ubuntu 24.04.3 LTS · WSL2 (kernel 6.6.87) \\
+\bottomrule
+\end{tabularx}
+
+\subsection{Qué mide cada herramienta y por qué}
+La medición de rendimiento se hace sobre la \textbf{superficie pública Astro}
+—inicio y autenticación— por diseño: es la superficie renderizada de forma
+estática (ADR-002, \emph{renderizado híbrido}) y la que fija el presupuesto de
+carga de RNF-02. La aplicación (SPA con render en cliente) no produce
+\emph{scores} de documento comparables y se reporta aparte solo como nota
+metodológica. La auditoría de seguridad cubre las dos superficies HTTP expuestas
+—daemon (\texttt{127.0.0.1:7431}) y relay (\texttt{127.0.0.1:8443})— tal como
+exige RNF-09.
+
+\subsection{Condiciones de medición (integridad del dato)}
+Todos los números provienen de ejecuciones reales de esta sesión; los artefactos
+crudos (JSON) se conservan en \texttt{docs/audits/corte1/} con su hash SHA-256
+(anexo). Condiciones:
+\begin{itemize}[leftmargin=1.2em,itemsep=1pt]
+  \item Lighthouse se corre contra el \textbf{build de producción} (\texttt{astro build})
+        servido de forma estática, nunca el servidor de desarrollo.
+  \item \textbf{3 corridas} por combinación; se reporta la \textbf{mediana} del
+        \emph{score} de Performance (Lighthouse tiene varianza). Las tres corridas
+        de cada combinación coincidieron.
+  \item ZAP se ejecuta como \textbf{proxy de escaneo pasivo} sobre los endpoints
+        enumerados de los contratos C-1/C-2. En una API JSON sin raíz navegable el
+        \emph{spider} clásico no descubre rutas; conducir peticiones reales a través
+        del proxy audita las respuestas efectivas (200 autenticadas, 401, 404). El
+        daemon se auditó \textbf{con el \emph{Bearer} local}; sus endpoints
+        protegidos respondieron 200. Las instancias auditadas son \textbf{efímeras y
+        desechables} (data-dir temporal y \emph{workspace} de prueba con archivos
+        dummy), nunca trabajo real.
+\end{itemize}
+
+\subsection{Comandos ejecutados}
+Reproducibles sobre el mismo build y las mismas instancias efímeras.
+
+\medskip
+\noindent\textit{Superficie pública (build de producción servido estático):}
+\begin{quote}\ttfamily\scriptsize\raggedright
+npm run build\quad(astro)\ \ →\ \ python3 -m http.server 4321 (dist/)
+\end{quote}
+
+\noindent\textit{Lighthouse — 4 combinaciones $\times$ 3 corridas (mediana):}
+\begin{quote}\ttfamily\scriptsize\raggedright
+CHROME\_PATH=<chromium> lighthouse \\
+\ \ http://127.0.0.1:4321/\{,login/\} [-{}-preset=desktop] \\
+\ \ -{}-output=json,html \ -{}-chrome-flags="-{}-headless=new ..."
+\end{quote}
+
+\noindent\textit{OWASP ZAP — escaneo pasivo por proxy (contenedor \texttt{zaproxy/zap-stable}):}
+\begin{quote}\ttfamily\scriptsize\raggedright
+docker run -d -p 8090:8090 zaproxy/zap-stable zap.sh -daemon -port 8090 \\
+\ \ -config api.disablekey=true \\
+curl -x http://127.0.0.1:8090 -H "Authorization: Bearer <token>" \\
+\ \ http://host.docker.internal:7431/v1/\{health,sessions,approvals,...\} \\
+curl "http://127.0.0.1:8090/OTHER/core/other/jsonreport/" -o zap-daemon.json
+\end{quote}
+
+\noindent Nota de red: en Docker Desktop sobre WSL2 el contenedor alcanza el host
+por \texttt{host.docker.internal} (no por \texttt{-{}-network=host}); es el mismo
+daemon/relay de \texttt{127.0.0.1}, comprobado por respuesta idéntica.
+
+\subsection{WebPageTest}
+La rúbrica lo admite como alternativa a Lighthouse. No se usa: exige una URL
+pública y este corte se mide en \texttt{localhost} sin despliegue. Lighthouse
+cubre íntegramente el requisito RNF-02.
+
+\regla
+
+% ============================ 3. LIGHTHOUSE ============================
+\section{Resultados de Lighthouse}
+Valores de la corrida mediana por combinación. \emph{Scores} en 0--100; métricas
+de laboratorio en milisegundos (CLS es adimensional).
+
+\medskip
+\begin{center}\footnotesize
+\begin{tabular}{@{}l l *{9}{c}@{}}
+\toprule
+\textbf{Página} & \textbf{Perfil} & \textbf{Perf} & \textbf{A11y} & \textbf{BP} & \textbf{SEO} & \textbf{FCP} & \textbf{LCP} & \textbf{TBT} & \textbf{CLS} & \textbf{SI} \\
+\midrule
+Inicio & mobile & 100 & 100 & 96 & 100 & 618 & 751 & 0 & 0.000 & 618 \\
+Inicio & desktop & 100 & 100 & 96 & 100 & 165 & 201 & 0 & 0.000 & 165 \\
+Login & mobile & 100 & 100 & 96 & 100 & 620 & 751 & 0 & 0.000 & 620 \\
+Login & desktop & 100 & 100 & 96 & 100 & 166 & 201 & 0 & 0.000 & 166 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\normalsize
+
+\subsection{Veredicto contra el presupuesto RNF-02}
+\noindent
+\begin{tabularx}{\linewidth}{@{}l l l@{}}
+\toprule
+\textbf{Umbral (RNF-02 / metas del proyecto)} & \textbf{Observado} & \textbf{Resultado} \\
+\midrule
+FCP $<$ 1\,500~ms & 165--620~ms (máx.\ 620) & \veredicto{Cumple} \\
+Performance $\ge$ 90 & 100 en las 4 & \veredicto{Cumple} \\
+Accessibility $\ge$ 95 & 100 en las 4 & \veredicto{Cumple} \\
+\bottomrule
+\end{tabularx}
+
+\subsection{Oportunidades y diagnósticos}
+Lighthouse \textbf{no reportó oportunidades de rendimiento con ahorro estimado}:
+la superficie estática ya es óptima (TBT 0~ms, CLS 0, sin recursos que diferir).
+El único punto por debajo de 100 es \textbf{Best Practices = 96}, causado por
+\texttt{errors-in-console}: el navegador registra un error de red \texttt{404} al
+solicitar \texttt{/favicon.ico}, recurso que el sitio no declara. Es el hallazgo
+H1 de la tabla de correcciones.
+
+\subsection{Nota sobre la aplicación (SPA)}
+La aplicación autenticada es de \emph{render en cliente} (CSR, ADR-002): sirve un
+documento mínimo y construye la interfaz en el navegador. Un \emph{score} de
+documento de Lighthouse sobre ella no es comparable con el de una página estática
+—penaliza el arranque del \emph{bundle} de forma que no refleja la experiencia
+real tras la hidratación— por lo que \textbf{no se reporta como métrica de
+documento} en este corte, en línea con RNF-02, que fija el presupuesto sobre la
+superficie pública. La SPA se gobierna por métricas de aplicación (tiempo a
+interactivo tras autenticación, latencia de \emph{stream} de eventos C-3) que se
+instrumentan en la fase de observabilidad, no con Lighthouse.
+
+\regla
+
+% ============================ 4. ZAP ============================
+\section{Resultados de OWASP ZAP}
+Resumen por superficie. La cuenta de alertas es por \emph{tipo}; entre paréntesis,
+el número de instancias.
+
+\medskip
+\noindent
+\begin{tabularx}{\linewidth}{@{}l c c X@{}}
+\toprule
+\textbf{Superficie} & \textbf{URLs auditadas} & \textbf{Alertas} & \textbf{Riesgo} \\
+\midrule
+Daemon (\texttt{7431}, autenticado) & 11 & 0 & --- \\
+Relay (\texttt{8443}) & 6 & 2 & 1 Medio, 1 Bajo \\
+\bottomrule
+\end{tabularx}
+
+\subsection{Daemon — sin hallazgos}
+Sobre 11 endpoints autenticados (\texttt{/v1/health}, \texttt{/v1/sessions},
+\texttt{/v1/approvals}, \texttt{/v1/rules}, \texttt{/v1/config/*},
+\texttt{/v1/audit}) ZAP no levantó ninguna alerta. La captura directa de cabeceras
+sobre las respuestas 200 confirma el endurecimiento de la fase API; el relay, en
+contraste, no aplica todavía esta capa (origen de H3):
+
+\medskip
+\noindent
+\begin{tabular}{@{}l l l@{}}
+\toprule
+\textbf{Cabecera de seguridad} & \textbf{Daemon} & \textbf{Relay} \\
+\midrule
+\texttt{X-Content-Type-Options} & \texttt{nosniff} & (ausente) \\
+\texttt{X-Frame-Options} & \texttt{DENY} & (ausente) \\
+\texttt{Referrer-Policy} & \texttt{no-referrer} & (ausente) \\
+\texttt{Cache-Control} & \texttt{no-store} & (ausente) \\
+\texttt{Server} (versión) & (ausente, sin fuga) & (ausente, sin fuga) \\
+\texttt{Access-Control-Allow-Origin} & (no expuesto) & \texttt{*} (origen de H2) \\
+\bottomrule
+\end{tabular}
+
+\subsection{Relay — 2 hallazgos}
+\noindent
+\begin{tabular}{@{}p{5.6cm} l c l@{}}
+\toprule
+\textbf{Alerta (ZAP)} & \textbf{Riesgo} & \textbf{Inst.} & \textbf{Clasificación} \\
+\midrule
+Cross-Domain Misconfiguration \newline {\footnotesize(id 10098, CWE-264, WASC-14)} & Medio & 5 & Corregir (H2) \\[0.3em]
+X-Content-Type-Options Header Missing \newline {\footnotesize(id 10021, CWE-693, WASC-15)} & Bajo & 1 & Corregir (H3) \\
+\bottomrule
+\end{tabular}
+
+\medskip
+\noindent El hallazgo Medio corresponde a la cabecera \texttt{Access-Control-Allow-Origin: *}
+que el relay emite en todas sus respuestas; el Bajo, a la ausencia de
+\texttt{nosniff} en el relay (cabecera que el daemon sí incluye).
+
+\regla
+\newpage
+
+% ============================ 5. CORRECCIONES ============================
+\section{Análisis de hallazgos y correcciones}
+Cada hallazgo se clasifica en \textbf{corregir} (real, con fix concreto),
+\textbf{no corregir con justificación} (falso positivo o no aplicable por
+arquitectura) o \textbf{aceptado temporalmente} (real pero pospuesto, con el
+disparador que lo reactiva).
+
+\medskip
+\noindent\footnotesize
+\begin{tabularx}{\linewidth}{@{}p{0.6cm} X l l@{}}
+\toprule
+\textbf{\#} & \textbf{Hallazgo · análisis y decisión} & \textbf{Riesgo} & \textbf{Req.} \\
+\midrule
+
+H1 & \textbf{404 de \texttt{/favicon.ico} (Lighthouse, BP 96).} El sitio Astro no
+declara favicon; el navegador lo pide de forma implícita y falla.
+\newline\textit{$\rightarrow$ Corregir (corte 2):} añadir \texttt{public/favicon.svg}
+y \texttt{<link rel="icon">} en el layout base. Lleva Best Practices a 100. &
+Bajo & RNF-02 \\
+\addlinespace
+
+H2 & \textbf{CORS permisivo en el relay (\texttt{Allow-Origin: *}, ZAP Medio).}
+Proviene de \texttt{CorsLayer::permissive()}, necesario en M2 para que la SPA
+(origen distinto) alcance el REST del relay entre orígenes.
+\newline\textit{$\rightarrow$ Corregir (corte 2):} restringir a una lista blanca
+configurable (\texttt{RELAY\_SPA\_ORIGINS}); permisivo solo bajo bandera de
+desarrollo. &
+Medio & RNF-09 \\
+\addlinespace
+
+H3 & \textbf{Falta \texttt{X-Content-Type-Options} en el relay (ZAP Bajo).} El
+daemon ya fija \texttt{nosniff}; el relay no aplica la misma capa de cabeceras.
+\newline\textit{$\rightarrow$ Corregir (corte 2):} añadir al relay la capa de
+seguridad del daemon (\texttt{nosniff}, \texttt{X-Frame-Options},
+\texttt{Referrer-Policy}, \texttt{Cache-Control: no-store}). &
+Bajo & RNF-09 \\
+\addlinespace
+
+H4 & \textbf{Sin Content-Security-Policy en las respuestas de las APIs.} La CSP
+protege documentos HTML frente a inyección de scripts; ambas superficies sirven
+\texttt{application/json}. La CSP de la SPA vive en su propio \texttt{index.html}.
+\newline\textit{$\rightarrow$ No corregir (justificado):} no aplica a una API JSON. &
+Info & --- \\
+\addlinespace
+
+H5 & \textbf{Sin HSTS / TLS en las APIs locales.} El daemon acepta solo conexiones
+de \emph{loopback} (RNF-04) y no usa TLS localmente; el relay corre HTTP en LAN
+sin despliegue público (ADR-009: el buzón en claro mantiene el relay dentro de
+LAN hasta M3).
+\newline\textit{$\rightarrow$ Aceptado temporalmente.} \textit{Disparador:} el
+despliegue público con certificado del \emph{hosting} lo convierte en corrección
+obligatoria. &
+Bajo & RNF-04 \\
+\addlinespace
+
+H6 & \textbf{\texttt{/v1/health} sin autenticación.} Es una sonda de \emph{liveness};
+devuelve solo estado y versión, ningún dato sensible.
+\newline\textit{$\rightarrow$ No corregir (justificado):} acceso anónimo deliberado
+por diseño. &
+Info & --- \\
+\addlinespace
+
+H7 & \textbf{El 400 del daemon repite el mensaje del \emph{parser} JSON.} Ante un
+cuerpo malformado devuelve el error de sintaxis (p.\,ej.\ ``\emph{key must be a
+string at line 1 column 2}''), sin traza de pila ni estado interno.
+\newline\textit{$\rightarrow$ No corregir (justificado):} ayuda al cliente y no
+filtra información sensible; el sobre de error es \texttt{ErrorEnvelope}
+estructurado. &
+Info & --- \\
+\bottomrule
+\end{tabularx}
+\normalsize
+
+\medskip
+\noindent\textbf{Corrección en caliente (sección 4.3).} No se aplicó ninguna: la
+condición que la habilita —fugas de trazas de pila o cuerpos crudos del
+\emph{upstream} en los errores— no se observó. Ambas APIs devuelven
+\texttt{\{"error":\{"code","message"\}\}} sin filtración, en línea con el criterio
+de terminación de la fase API.
+
+\regla
+
+% ============================ 6. PLAN CORTE 2 ============================
+\section{Plan hacia el corte 2}
+Correcciones comprometidas, cada una con su criterio de verificación objetivo
+(re-medición o re-escaneo que demuestre el delta):
+
+\begin{enumerate}[leftmargin=1.4em,itemsep=3pt]
+  \item \textbf{Favicon del sitio público (H1).} Verificación: re-correr Lighthouse
+        en las 4 combinaciones; \texttt{errors-in-console} sin instancias y
+        \textbf{Best Practices = 100}.
+  \item \textbf{Lista blanca de orígenes CORS en el relay (H2).} Verificación:
+        re-escaneo ZAP del relay; la alerta \emph{Cross-Domain Misconfiguration}
+        (10098) desaparece con un origen no autorizado y persiste el acceso del
+        origen configurado de la SPA.
+  \item \textbf{Capa de cabeceras de seguridad en el relay (H3).} Verificación:
+        re-escaneo ZAP; la alerta \emph{X-Content-Type-Options} (10021) desaparece;
+        el \emph{delta} de cabeceras daemon\,$\leftrightarrow$\,relay queda en cero.
+\end{enumerate}
+
+\noindent Los hallazgos H4, H6 y H7 no requieren acción; H5 permanece aceptado
+hasta el despliegue público (M3), momento en que TLS/HSTS pasan a ser obligatorios.
+
+\regla
+
+% ============================ 7. ANEXO ============================
+\section{Anexo — evidencia cruda e integridad}
+Los artefactos crudos que respaldan cada cifra viven en el repositorio del núcleo,
+bajo \texttt{docs/audits/corte1/}: los JSON+HTML de Lighthouse
+(\texttt{lighthouse/}) y de ZAP (\texttt{zap/}). A continuación, el hash SHA-256
+de cada JSON (prefijo de 32 hex) para verificar que las cifras del reporte no se
+alteraron.
+
+\medskip
+\noindent\footnotesize
+\begin{tabular}{@{}p{7.2cm} l@{}}
+\toprule
+\textbf{Artefacto (JSON crudo)} & \textbf{SHA-256 (prefijo)} \\
+\midrule
+\texttt{\scriptsize lighthouse/landing-desktop-run1.report.json} & \texttt{\scriptsize cefc3d811a9fe2d09cef1e8470eddde6}\ldots \\
+\texttt{\scriptsize lighthouse/landing-desktop-run2.report.json} & \texttt{\scriptsize e256221aee4e6ca3821d828b5aa4eaa4}\ldots \\
+\texttt{\scriptsize lighthouse/landing-desktop-run3.report.json} & \texttt{\scriptsize b58f7a8925d3e34aa0fbc9618e2346fe}\ldots \\
+\texttt{\scriptsize lighthouse/landing-mobile-run1.report.json} & \texttt{\scriptsize 50f921c4c7001c77748faaf38e42521f}\ldots \\
+\texttt{\scriptsize lighthouse/landing-mobile-run2.report.json} & \texttt{\scriptsize 3decbc4c18a30f6c6f7fdd523753aeb2}\ldots \\
+\texttt{\scriptsize lighthouse/landing-mobile-run3.report.json} & \texttt{\scriptsize 3ae254a34f79af4b954fd65baa4f71c6}\ldots \\
+\texttt{\scriptsize lighthouse/login-desktop-run1.report.json} & \texttt{\scriptsize b9cf94a76f9a1fdcbcdec10426059275}\ldots \\
+\texttt{\scriptsize lighthouse/login-desktop-run2.report.json} & \texttt{\scriptsize 4cc5ed56341339506dced32363516a1b}\ldots \\
+\texttt{\scriptsize lighthouse/login-desktop-run3.report.json} & \texttt{\scriptsize c91d680f7086535ca6c1c00e5bdb129c}\ldots \\
+\texttt{\scriptsize lighthouse/login-mobile-run1.report.json} & \texttt{\scriptsize bdaf32cae991cb6342b535d40f719783}\ldots \\
+\texttt{\scriptsize lighthouse/login-mobile-run2.report.json} & \texttt{\scriptsize 7f0b3e0c714e95c2c1b2953e28dbfa63}\ldots \\
+\texttt{\scriptsize lighthouse/login-mobile-run3.report.json} & \texttt{\scriptsize 4f88a51546d335d04388cc654f572e30}\ldots \\
+\texttt{\scriptsize zap/zap-daemon.json} & \texttt{\scriptsize 5c1d06a319b357325bf270e6d59ad2a7}\ldots \\
+\texttt{\scriptsize zap/zap-relay.json} & \texttt{\scriptsize 47178d2310408659e2b526be53b699b2}\ldots \\
+\bottomrule
+\end{tabular}
+\normalsize
+
+\medskip
+\regla
+\vspace{0.4em}
+\noindent{\footnotesize\textcolor{linea}{Rutsubo · Reporte de Métricas y
+Auditoría de Seguridad · Corte 1 de 2 · Ramsés Alejandro Camas Nájera · MCIT-UPCh
+· julio 2026. Toda métrica proviene de una ejecución real de esta sesión; los
+artefactos crudos y sus hashes acompañan este documento.}}
+
+\end{document}
