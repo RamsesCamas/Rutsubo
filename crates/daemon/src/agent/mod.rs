@@ -40,6 +40,16 @@ async fn run_turn(app: &App, session_id: SessionId) -> Result<(), Box<dyn std::e
     let Some(row) = store::sessions::get(&app.pool, &session_id).await? else {
         return Ok(());
     };
+    // Remoto (web): el FS de Railway es efímero. Antes de correr el turno,
+    // rehidratar el workspace temporal desde Postgres (fuente de verdad de los
+    // archivos), por si el contenedor reinició. Best-effort.
+    if let Some(pool) = &app.remote_auth {
+        let workspace = std::path::Path::new(&row.workspace_path);
+        let _ = tokio::fs::create_dir_all(workspace).await;
+        if let Err(err) = store::files::rehydrate(pool, &session_id, workspace).await {
+            tracing::warn!(%err, "no se pudo rehidratar el workspace desde Postgres");
+        }
+    }
     let ctx = ToolCtx {
         workspace: PathBuf::from(&row.workspace_path),
         session_id,
@@ -302,6 +312,26 @@ async fn run_gated_tool(
             None,
         )
         .await?;
+        // Remoto: persistir el archivo COMPLETO en Postgres (el diff no basta
+        // para overwrites/edits). Se relee del workspace tras la escritura.
+        // Best-effort: un fallo de Postgres no aborta el turno del agente.
+        if let Some(pool) = &app.remote_auth
+            && let Ok(target) = rutsubo_core::paths::resolve_within(&ctx.workspace, &diff.path)
+        {
+            match tokio::fs::read(&target).await {
+                Ok(bytes) => {
+                    let mime = store::files::guess_mime(&diff.path);
+                    if let Err(err) =
+                        store::files::upsert(pool, &session_id, &diff.path, &bytes, mime).await
+                    {
+                        tracing::warn!(%err, path = %diff.path, "no se pudo persistir el archivo en Postgres");
+                    }
+                }
+                Err(err) => {
+                    tracing::warn!(%err, path = %diff.path, "no se pudo releer el archivo para persistir")
+                }
+            }
+        }
     }
     audit_tool(app, session_id, tc, result.ok, false).await?;
     Ok((result, false))

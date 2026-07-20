@@ -35,11 +35,23 @@ fn dto_or_500(row: &store::sessions::SessionRow) -> Result<SessionDto, ApiError>
         .ok_or_else(|| ApiError::internal("fila de sesión corrupta"))
 }
 
+/// Asigna y crea el workspace real de una sesión REMOTA
+/// (`<data_dir>/remote-ws/<id>`) y devuelve su ruta. La web no elige carpeta:
+/// el daemon asigna un directorio temporal por sesión, cuyos archivos se
+/// persisten en Postgres (`generated_files`) por ser el FS efímero.
+async fn ensure_remote_workspace(app: &App, id: &SessionId) -> Result<String, ApiError> {
+    let dir = app.cfg.remote_workspace(&id.to_string());
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .map_err(ApiError::internal)?;
+    Ok(dir.to_string_lossy().into_owned())
+}
+
 /// Crea una sesión desde una tarea del buzón (ADR-009), sin handler HTTP.
 /// El móvil/web no eligen carpeta (ahí no se desarrolla, solo se gestiona):
 /// la carpeta la decide el ESCRITORIO — el último proyecto usado aquí; si no
 /// hay ninguno, `RUTSUBO_DEFAULT_WORKSPACE`; al final el cwd del daemon.
-/// En modo remote: `remote://chat`.
+/// En modo remote: un workspace temporal por sesión.
 pub async fn create_session_inner(
     app: &App,
     title: Option<String>,
@@ -51,8 +63,9 @@ pub async fn create_session_inner(
             None,
         ));
     }
+    let id = SessionId::new();
     let workspace_path = if app.cfg.auth_mode == crate::config::AuthMode::Remote {
-        "remote://chat".to_string()
+        ensure_remote_workspace(app, &id).await?
     } else if let Some(recent) = store::sessions::most_recent_workspace(&app.pool)
         .await
         .map_err(ApiError::internal)?
@@ -65,7 +78,6 @@ pub async fn create_session_inner(
             .map(|p| p.to_string_lossy().into_owned())
             .map_err(ApiError::internal)?
     };
-    let id = SessionId::new();
     store::sessions::create(&app.pool, &id, &workspace_path, &title, Utc::now()).await?;
     app.emit(
         id,
@@ -116,12 +128,14 @@ pub async fn create(
     }
 
     let id = SessionId::new();
+    // Remoto: el daemon asigna un workspace temporal por sesión (la web no
+    // navega el FS del servidor); local: la carpeta que eligió el usuario.
     let workspace_path = if remote {
-        "remote://chat"
+        ensure_remote_workspace(&app, &id).await?
     } else {
-        &req.workspace_path
+        req.workspace_path.clone()
     };
-    store::sessions::create(&app.pool, &id, workspace_path, &title, Utc::now()).await?;
+    store::sessions::create(&app.pool, &id, &workspace_path, &title, Utc::now()).await?;
     app.emit(
         id,
         Event::SessionState {

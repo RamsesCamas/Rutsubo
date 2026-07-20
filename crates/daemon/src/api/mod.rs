@@ -6,6 +6,7 @@ pub mod approvals;
 pub mod asr;
 pub mod audit;
 pub mod config;
+pub mod files;
 pub mod fs;
 pub mod health;
 pub mod provider;
@@ -30,6 +31,13 @@ pub fn router(app: App) -> Router {
         )
         .route("/v1/sessions/{id}/messages", post(sessions::post_message))
         .route("/v1/sessions/{id}/events", get(sessions::events))
+        // Archivos generados/subidos (web-only, modo remoto): listar, servir
+        // crudo (preview/descarga) y subir (multipart).
+        .route(
+            "/v1/sessions/{id}/files",
+            get(files::list).post(files::upload),
+        )
+        .route("/v1/sessions/{id}/files/raw", get(files::raw))
         .route("/v1/approvals", get(approvals::list_pending))
         .route("/v1/approvals/{id}/decision", post(approvals::decide))
         .route("/v1/rules", get(rules::get_rules).put(rules::put_rules))

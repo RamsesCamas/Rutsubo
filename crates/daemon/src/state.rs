@@ -62,6 +62,7 @@ impl AppState {
                 .connect(cfg.database_url.as_deref().expect("validated config"))
                 .await?;
             crate::auth::migrate_remote_auth(&pool).await?;
+            crate::auth::migrate_remote_files(&pool).await?;
             Some(pool)
         } else {
             None
@@ -88,7 +89,7 @@ impl AppState {
             &model_config,
         );
         let tools = Arc::new(if cfg.auth_mode == crate::config::AuthMode::Remote {
-            ToolRegistry::default()
+            ToolRegistry::remote()
         } else {
             ToolRegistry::standard()
         });

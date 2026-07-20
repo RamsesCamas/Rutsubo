@@ -105,6 +105,19 @@ impl ToolRegistry {
         registry
     }
 
+    /// Registro para el modo remoto (web desplegada): herramientas de archivos
+    /// sobre el workspace temporal de la sesión, SIN `run_shell` (no hay shell
+    /// útil en el contenedor y se evita ejecución arbitraria en el servidor).
+    /// Los archivos escritos se persisten aparte en Postgres (FS efímero).
+    pub fn remote() -> Self {
+        let mut registry = Self::default();
+        registry.register(Arc::new(ReadFile));
+        registry.register(Arc::new(WriteFile));
+        registry.register(Arc::new(EditFile));
+        registry.register(Arc::new(Search));
+        registry
+    }
+
     pub fn register(&mut self, tool: Arc<dyn Tool>) {
         self.tools.insert(tool.name(), tool);
     }

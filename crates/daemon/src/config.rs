@@ -127,6 +127,15 @@ impl DaemonConfig {
     }
 }
 
+impl DaemonConfig {
+    /// Workspace real por sesión en modo remoto: `<data_dir>/remote-ws/<id>`.
+    /// El FS es efímero (Railway); la fuente de verdad de los archivos es
+    /// Postgres (`generated_files`), que se rehidrata a este directorio.
+    pub fn remote_workspace(&self, session_id: &str) -> PathBuf {
+        self.data_dir.join("remote-ws").join(session_id)
+    }
+}
+
 fn is_loopback(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => v4.is_loopback(),

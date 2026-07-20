@@ -7,6 +7,7 @@ pub mod approvals;
 pub mod audit;
 pub mod config;
 pub mod events;
+pub mod files;
 pub mod messages;
 pub mod rules;
 pub mod sessions;

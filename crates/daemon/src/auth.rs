@@ -127,6 +127,25 @@ async fn upsert_remote_user(pool: &PgPool, email: &str) -> Result<(), sqlx::Erro
     Ok(())
 }
 
+/// Tabla de archivos generados/subidos en modo remoto (web). El FS de Railway
+/// es efímero; esta tabla en Postgres es la fuente de verdad (ver
+/// `store::files`). Creada imperativamente como el resto del esquema remoto.
+pub async fn migrate_remote_files(pool: &PgPool) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS generated_files (\
+           id BIGSERIAL PRIMARY KEY, \
+           session_id TEXT NOT NULL, \
+           path TEXT NOT NULL, \
+           content BYTEA NOT NULL, \
+           mime TEXT NOT NULL DEFAULT 'text/plain', \
+           updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), \
+           UNIQUE (session_id, path))",
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
