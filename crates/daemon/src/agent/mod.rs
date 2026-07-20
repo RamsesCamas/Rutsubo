@@ -42,12 +42,19 @@ async fn run_turn(app: &App, session_id: SessionId) -> Result<(), Box<dyn std::e
     };
     // Remoto (web): el FS de Railway es efímero. Antes de correr el turno,
     // rehidratar el workspace temporal desde Postgres (fuente de verdad de los
-    // archivos), por si el contenedor reinició. Best-effort.
+    // archivos), por si el contenedor reinició. Best-effort. Además listamos
+    // los archivos para inyectarlos al contexto: el agente no tiene una
+    // herramienta de "listar", así que sin esto no sabría qué archivos hay
+    // (subidos/generados) y respondería que no existen.
+    let mut workspace_files: Vec<String> = Vec::new();
     if let Some(pool) = &app.remote_auth {
         let workspace = std::path::Path::new(&row.workspace_path);
         let _ = tokio::fs::create_dir_all(workspace).await;
         if let Err(err) = store::files::rehydrate(pool, &session_id, workspace).await {
             tracing::warn!(%err, "no se pudo rehidratar el workspace desde Postgres");
+        }
+        if let Ok(files) = store::files::list(pool, &session_id).await {
+            workspace_files = files.into_iter().map(|f| f.path).collect();
         }
     }
     let ctx = ToolCtx {
@@ -62,7 +69,7 @@ async fn run_turn(app: &App, session_id: SessionId) -> Result<(), Box<dyn std::e
     for iteration in 0..app.cfg.max_iterations {
         let history = store::messages::history(&app.pool, &session_id).await?;
         let request = GenerationRequest {
-            messages: context::build(&ctx.workspace, &history, &turn_msgs),
+            messages: context::build(&ctx.workspace, &workspace_files, &history, &turn_msgs),
             tools: app.tools.schemas(),
             max_tokens: 1024,
             temperature: 0.2,
