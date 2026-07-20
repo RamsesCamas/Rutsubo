@@ -51,10 +51,13 @@ pub async fn list(
 
 #[derive(Deserialize)]
 pub struct RawQuery {
-    pub path: String,
+    /// Ruta del archivo. Se llama `f` (no `path`) para no colisionar con el
+    /// parámetro catch-all `path` del proxy BFF de Vercel, que descarta un
+    /// query `path` para no duplicar el segmento de ruta.
+    pub f: String,
 }
 
-/// GET /v1/sessions/{id}/files/raw?path=… — contenido crudo con su MIME.
+/// GET /v1/sessions/{id}/files/raw?f=… — contenido crudo con su MIME.
 /// Sirve el preview (iframe) y la descarga. El BFF reenvía el `Content-Type`.
 pub async fn raw(
     State(app): State<App>,
@@ -62,7 +65,7 @@ pub async fn raw(
     Query(q): Query<RawQuery>,
 ) -> Result<Response<Body>, ApiError> {
     let sid = parse_id(&id)?;
-    let (content, mime) = store::files::get(pool(&app)?, &sid, &q.path)
+    let (content, mime) = store::files::get(pool(&app)?, &sid, &q.f)
         .await
         .map_err(ApiError::internal)?
         .ok_or_else(|| ApiError::not_found("archivo"))?;
